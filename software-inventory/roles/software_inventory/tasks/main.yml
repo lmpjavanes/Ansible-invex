@@ -30,6 +30,35 @@
   when: host_unavailable
 
 # =========================
+# Baseline Linux desde base_linux.yml (LISTA NEVRA -> SOLO nombre)
+# =========================
+- name: Linux | Cargar base_linux.yml desde el rol (AAP best practice)
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/vars/base_linux.yml"
+    name: base_cfg
+  when: os_family_safe != 'Windows'
+
+- name: Linux | Tomar baseline como lista (NEVRA) desde base_linux.yml
+  ansible.builtin.set_fact:
+    baseline_linux_nevra_list: "{{ base_cfg.base_linux | default([]) }}"
+  when: os_family_safe != 'Windows'
+
+- name: Linux | Extraer SOLO el nombre del paquete desde NEVRA (ignorar version/release/arch)
+  ansible.builtin.set_fact:
+    baseline_linux_names: >-
+      {{
+        (baseline_linux_nevra_list | default([]))
+        | map('trim')
+        | reject('equalto', '')
+        | map('regex_replace', '\.[^.]+$', '')              # quita .arch
+        | map('regex_replace', '-[^-]+-[^-]+$', '')         # quita -release -version
+        | map('lower')
+        | list
+        | unique
+      }}
+  when: os_family_safe != 'Windows'
+  
+# =========================
 # Linux (RHEL family y otras distros Linux)
 # =========================
 - name: Linux | Recolectar paquetes instalados

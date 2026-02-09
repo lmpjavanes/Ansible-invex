@@ -5,7 +5,8 @@ host,checked_at,status,paquete_valido,package_nevra,install_date,summary
 {% else %}
 {% for pkg in (hostres.packages | default([])) %}
 {% set nevra = (pkg.package_full | default('') | string | trim) %}
-{{ hostres.host | default('') }},{{ hostres.checked_at | default('') }},ok,"{{ '*' if nevra in (baseline_linux_nevra | default([])) else '' }}",{{ (nevra | regex_replace('[\r\n]+',' ') | replace('"','""')) }},{{ (pkg.install_date | default('') | string | trim | regex_replace('[\r\n]+',' ') | replace('"','""')) }},"{{ (pkg.summary | default('') | string | trim | regex_replace('[\r\n]+',' ') | replace('"','""')) }}"
+{% set pkg_name = (pkg.name | default('') | string | trim | lower) %}
+{{ hostres.host | default('') }},{{ hostres.checked_at | default('') }},ok,"{{ '*' if pkg_name in (baseline_linux_names | default([])) else '' }}",{{ (nevra | regex_replace('[\r\n]+',' ') | replace('"','""')) }},{{ (pkg.install_date | default('') | string | trim | regex_replace('[\r\n]+',' ') | replace('"','""')) }},"{{ (pkg.summary | default('') | string | trim | regex_replace('[\r\n]+',' ') | replace('"','""')) }}"
 {% endfor %}
 {% endif %}
 {% endfor %}

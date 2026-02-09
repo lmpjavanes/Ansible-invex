@@ -39,9 +39,10 @@
         </thead>
         <tbody>
           {% for pkg in hostres.packages | default([]) %}
+          {% set pkg_name = (pkg.name | default('') | string | trim | lower) %}
           <tr>
             <td class="nowrap">
-               {{ '*' if (pkg.package_full | default('')) in (baseline_linux_nevra | default([])) else '' }}
+               {{ '*' if pkg_name in (baseline_linux_names | default([])) else '' }}
             </td>
             <td class="nowrap">{{ pkg.package_full | default('') }}</td>
             <td class="nowrap">{{ pkg.install_date | default('') }}</td>

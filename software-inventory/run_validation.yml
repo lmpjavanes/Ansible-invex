@@ -57,20 +57,13 @@
           }}
       loop: "{{ groups['LINUX'] | default([]) }}"
 
-    - name: Leer baseline de paquetes Linux (NEVRA) desde TXT
+    - name: Obtener baseline Linux (solo nombres) desde el primer host Linux
       ansible.builtin.set_fact:
-        baseline_linux_raw: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../files/baseline_linux.txt') }}"
-
-    - name: Normalizar baseline Linux a lista (omitir encabezado y líneas vacías)
-      ansible.builtin.set_fact:
-        baseline_linux_nevra: >-
+        baseline_linux_names: >-
           {{
-            baseline_linux_raw.splitlines()
-            | map('trim')
-            | reject('equalto', '')
-            | reject('equalto', 'Paquete')
-            | list
-          }}
+            hostvars[(groups['LINUX'] | default([]) | first)].baseline_linux_names
+            | default([])
+          }}    
 
     - name: Consolidar resultados WINDOWS (incluye no disponibles)
       ansible.builtin.set_fact:
