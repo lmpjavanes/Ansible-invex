@@ -1,0 +1,56 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Linux Software Inventory</title>
+  <style>
+    body { font-family: Arial, sans-serif; }
+    table { border-collapse: collapse; width: 100%; margin-bottom: 24px; }
+    th, td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }
+    th { background: #f3f3f3; position: sticky; top: 0; }
+    .muted { color: #666; }
+    .down { color: #b00; font-weight: bold; }
+    .nowrap { white-space: nowrap; }
+  </style>
+</head>
+<body>
+  <h1>Linux Software Inventory</h1>
+  <p><b>Generated:</b> {{ ansible_date_time.iso8601 }}</p>
+
+  {% for hostres in audit_linux %}
+    <h2>Host: {{ hostres.host }}</h2>
+
+    {% if hostres.status | default('ok') == 'unavailable' %}
+      <p class="down"><b>Status:</b> {{ hostres.status }} | {{ hostres.message }}</p>
+    {% else %}
+      <p class="muted">
+        <b>Checked at:</b> {{ hostres.checked_at }}
+        | <b>Total packages:</b> {{ hostres.total_packages | default(hostres.packages | length) }}
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th class="nowrap">Valid package</th>
+            <th>Package (RPM NEVRA)</th>
+            <th class="nowrap">Install date</th>
+            <th>Summary</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for pkg in hostres.packages | default([]) %}
+          <tr>
+            <td class="nowrap">
+               {{ '*' if (pkg.package_full | default('')) in (baseline_linux_nevra | default([])) else '' }}
+            </td>
+            <td class="nowrap">{{ pkg.package_full | default('') }}</td>
+            <td class="nowrap">{{ pkg.install_date | default('') }}</td>
+            <td>{{ pkg.summary | default('') }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  {% endfor %}
+</body>
+</html>

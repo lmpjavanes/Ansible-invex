@@ -1,0 +1,53 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Windows Software Inventory</title>
+  <style>
+    body { font-family: Arial, sans-serif; }
+    table { border-collapse: collapse; width: 100%; margin-bottom: 24px; }
+    th, td { border: 1px solid #ddd; padding: 8px; }
+    th { background: #f3f3f3; position: sticky; top: 0; }
+    .muted { color: #666; }
+    .down { color: #b00; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>Windows Software Inventory</h1>
+  <p><b>Generated:</b> {{ ansible_date_time.iso8601 }}</p>
+
+  {% for hostres in audit_windows %}
+    <h2>Host: {{ hostres.host }}</h2>
+
+    {% if hostres.status | default('ok') == 'unavailable' %}
+      <p class="down">{{ hostres.message }}</p>
+    {% else %}
+      <p class="muted">
+        <b>Checked at:</b> {{ hostres.checked_at }}
+        | <b>Total apps:</b> {{ hostres.total_packages | default(hostres.packages | length) }}
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>DisplayName</th>
+            <th>DisplayVersion</th>
+            <th>Publisher</th>
+            <th>InstallDate</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for pkg in hostres.packages | default([]) %}
+          <tr>
+            <td>{{ pkg.DisplayName | default('') }}</td>
+            <td>{{ pkg.DisplayVersion | default('') }}</td>
+            <td>{{ pkg.Publisher | default('') }}</td>
+            <td>{{ pkg.InstallDate | default('') }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  {% endfor %}
+</body>
+</html>

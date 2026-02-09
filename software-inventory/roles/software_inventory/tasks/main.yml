@@ -1,0 +1,203 @@
+- name: Inicializar listas de software/servicios
+  ansible.builtin.set_fact:
+    installed_packages: []
+    installed_services: []
+
+- name: Definir os_family seguro (aunque fallen facts)
+  ansible.builtin.set_fact:
+    os_family_safe: "{{ ansible_os_family | default('unknown') }}"
+
+- name: Detectar host sin facts (unavailable)
+  ansible.builtin.set_fact:
+    host_unavailable: "{{ os_family_safe == 'unknown' }}"
+
+- name: Marcar resultado como servidor no disponible
+  ansible.builtin.set_fact:
+    software_inventory_result:
+      host: "{{ inventory_hostname }}"
+      os_family: "{{ os_family_safe }}"
+      checked_at: "{{ ansible_date_time.iso8601 | default('') }}"
+      status: "unavailable"
+      message: "Servidor no disponible"
+      total_packages: 0
+      packages: []
+      total_services: 0
+      services: []
+  when: host_unavailable
+
+- name: Terminar role en host no disponible
+  ansible.builtin.meta: end_host
+  when: host_unavailable
+
+# =========================
+# Linux (RHEL family y otras distros Linux)
+# =========================
+- name: Linux | Recolectar paquetes instalados
+  ansible.builtin.package_facts:
+    manager: auto
+  when: os_family_safe != 'Windows'
+
+# Solo para RHEL family
+- name: Linux (RHEL family) | Obtener INSTALLTIME de RPM y convertir a ISO8601 (UTC) por paquete
+  ansible.builtin.shell: |
+    rpm -qa --qf '%{NAME}|%{INSTALLTIME}\n' | awk -F'|' '
+      $2 ~ /^[0-9]+$/ && $2 > 0 {
+        cmd="date -u -d @"$2" +%Y-%m-%dT%H:%M:%SZ"
+        cmd | getline d
+        close(cmd)
+        print $1 "|" d
+        next
+      }
+      { print $1 "|" "" }
+    '
+  args:
+    executable: /bin/bash
+  register: rpm_install_iso
+  changed_when: false
+  when: os_family_safe == 'RedHat'
+
+- name: Linux (RHEL family) | Construir mapa nombre->install_date (string ISO8601)
+  ansible.builtin.set_fact:
+    rpm_install_time_map: >-
+      {%- set m = {} -%}
+      {%- for line in (rpm_install_iso.stdout_lines | default([])) -%}
+      {%- set parts = line.split('|') -%}
+      {%- if parts | length == 2 -%}
+      {%- set _ = m.update({ parts[0]: parts[1] }) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ m }}
+  when: os_family_safe == 'RedHat'
+
+- name: Linux (RHEL family) | Obtener Summary de paquetes RPM
+  ansible.builtin.shell: |
+    rpm -qa --qf '%{NAME}|%{SUMMARY}\n'
+  args:
+    executable: /bin/bash
+  register: rpm_summaries
+  changed_when: false  
+  when: os_family_safe == 'RedHat'
+
+- name: Linux (RHEL family) | Construir mapa nombre->summary
+  ansible.builtin.set_fact:
+    rpm_summary_map: >-
+      {%- set m = {} -%}
+      {%- for line in (rpm_summaries.stdout_lines | default([])) -%}
+      {%- set parts = line.split('|', 1) -%}
+      {%- if parts | length == 2 -%}
+      {%- set _ = m.update({ parts[0]: parts[1] }) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ m }}
+  when: os_family_safe == 'RedHat'
+
+- name: Linux | Construir lista completa
+  ansible.builtin.set_fact:
+    installed_packages: "{{ installed_packages + records }}"
+  vars:
+    pkg_name: "{{ item.key }}"
+    pkg_entries: "{{ item.value }}"
+    records: >-
+      {%- set out = [] -%}
+      {%- for e in pkg_entries -%}
+      {%- set full = pkg_name ~ '-' ~ (e.version | default('')) ~ '-' ~ (e.release | default('')) ~ '.' ~ (e.arch | default('')) -%}
+      {%- set _ = out.append(
+          e | combine({
+            'name': pkg_name,
+            'package_full': full,
+            'install_date': ((os_family_safe == 'RedHat') | ternary(rpm_install_time_map[pkg_name] | default(''), '')),
+            'summary': ((os_family_safe == 'RedHat') | ternary(rpm_summary_map[pkg_name] | default(''), ''))
+          })
+        )
+      -%}
+      {%- endfor -%}
+      {{ out }}
+  loop: "{{ ansible_facts.packages | dict2items }}"
+  when: os_family_safe != 'Windows'
+
+- name: Linux | Ordenar lista por package_full
+  ansible.builtin.set_fact:
+    installed_packages: "{{ installed_packages | sort(attribute='package_full') }}"
+  when: os_family_safe != 'Windows'
+
+- name: Linux | Recolectar servicios (systemd)
+  ansible.builtin.service_facts:
+  when: os_family_safe != 'Windows'
+
+- name: Linux | Normalizar servicios (systemd)
+  ansible.builtin.set_fact:
+    installed_services: >-
+      {{
+        ansible_facts.services
+        | default({})
+        | dict2items
+        | map(attribute='value')
+        | list
+      }}
+  when: os_family_safe != 'Windows'
+
+# =========================
+# Windows
+# =========================
+- name: Windows | Obtener software instalado
+  ansible.windows.win_powershell:
+    script: |
+      $paths = @(
+        "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
+        "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+      )
+
+      $apps = foreach ($p in $paths) {
+        Get-ItemProperty $p -ErrorAction SilentlyContinue |
+          Where-Object { $_.DisplayName -and $_.DisplayName.Trim().Length -gt 0 } |
+          Select-Object `
+            @{n="DisplayName";e={$_.DisplayName}},
+            @{n="DisplayVersion";e={$_.DisplayVersion}},
+            @{n="Publisher";e={$_.Publisher}},
+            @{n="InstallDate";e={$_.InstallDate}},
+            @{n="Arch";e={ if ($p -like "*WOW6432Node*") {"x86"} else {"x64"} }}
+      }
+
+      # Quitar duplicados por DisplayName + DisplayVersion
+      $apps |
+        Sort-Object DisplayName, DisplayVersion -Unique
+  register: win_apps_raw
+  when: os_family_safe == 'Windows'
+
+- name: Windows | Normalizar lista de software (output)
+  ansible.builtin.set_fact:
+    installed_packages: "{{ win_apps_raw.output | default([]) }}"
+  when: os_family_safe == 'Windows'
+
+- name: Windows | Recolectar servicios
+  ansible.windows.win_powershell:
+    script: |
+      Get-Service |
+        Select-Object `
+          @{n="Name";e={$_.Name}},
+          @{n="DisplayName";e={$_.DisplayName}},
+          @{n="Status";e={$_.Status.ToString()}},
+          @{n="StartType";e={$_.StartType.ToString()}}
+  register: win_services_raw
+  when: os_family_safe == 'Windows'
+
+- name: Windows | Normalizar servicios
+  ansible.builtin.set_fact:
+    installed_services: "{{ win_services_raw.output | default([]) }}"
+  when: os_family_safe == 'Windows'
+
+# =========================
+# Resultado final por host
+# =========================
+- name: Construir resultado final por host (ok)
+  ansible.builtin.set_fact:
+    software_inventory_result:
+      host: "{{ inventory_hostname }}"
+      os_family: "{{ os_family_safe }}"
+      checked_at: "{{ ansible_date_time.iso8601 }}"
+      status: "ok"
+      message: ""
+      total_packages: "{{ installed_packages | length }}"
+      packages: "{{ installed_packages }}"
+      total_services: "{{ installed_services | length }}"
+      services: "{{ installed_services }}"

@@ -1,0 +1,127 @@
+- name: Software inventory (Linux)
+  hosts: LINUX
+  gather_facts: yes
+  become: yes
+  ignore_unreachable: true
+  any_errors_fatal: false
+  max_fail_percentage: 100
+  roles:
+    - software_inventory
+
+- name: Software inventory (Windows)
+  hosts: WINDOWS
+  gather_facts: yes
+  become: no
+  ignore_unreachable: true
+  any_errors_fatal: false
+  max_fail_percentage: 100
+  roles:
+    - software_inventory
+
+- name: Generar reportes (control)
+  hosts: inv-ts-ansible
+  gather_facts: yes
+  vars:
+    report_ts: "{{ ansible_date_time.iso8601_basic_short }}"
+    report_dir: "/reportes_ansible/software_inventory/{{ report_ts }}"
+  tasks:
+    - name: Crear directorio del reporte
+      ansible.builtin.file:
+        path: "{{ report_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Inicializar listas consolidadas por OS
+      ansible.builtin.set_fact:
+        audit_linux: []
+        audit_windows: []
+
+    - name: Consolidar resultados LINUX (incluye no disponibles)
+      ansible.builtin.set_fact:
+        audit_linux: "{{ audit_linux + [ host_result ] }}"
+      vars:
+        host_result: >-
+          {{
+            hostvars[item].software_inventory_result
+            | default({
+                'host': item,
+                'os_family': 'RedHat',
+                'checked_at': ansible_date_time.iso8601,
+                'status': 'unavailable',
+                'message': 'Servidor no disponible',
+                'total_packages': 0,
+                'packages': [],
+                'total_services': 0,
+                'services': []
+              })
+          }}
+      loop: "{{ groups['LINUX'] | default([]) }}"
+
+    - name: Leer baseline de paquetes Linux (NEVRA) desde TXT
+      ansible.builtin.set_fact:
+        baseline_linux_raw: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../files/baseline_linux.txt') }}"
+
+    - name: Normalizar baseline Linux a lista (omitir encabezado y líneas vacías)
+      ansible.builtin.set_fact:
+        baseline_linux_nevra: >-
+          {{
+            baseline_linux_raw.splitlines()
+            | map('trim')
+            | reject('equalto', '')
+            | reject('equalto', 'Paquete')
+            | list
+          }}
+
+    - name: Consolidar resultados WINDOWS (incluye no disponibles)
+      ansible.builtin.set_fact:
+        audit_windows: "{{ audit_windows + [ host_result ] }}"
+      vars:
+        host_result: >-
+          {{
+            hostvars[item].software_inventory_result
+            | default({
+                'host': item,
+                'os_family': 'Windows',
+                'checked_at': ansible_date_time.iso8601,
+                'status': 'unavailable',
+                'message': 'Servidor no disponible',
+                'total_packages': 0,
+                'packages': [],
+                'total_services': 0,
+                'services': []
+              })
+          }}
+      loop: "{{ groups['WINDOWS'] | default([]) }}"
+
+    - name: Reporte CSV (Linux software)
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../roles/software_inventory/templates/linux_software.csv.j2"
+        dest: "{{ report_dir }}/linux_software_inventory.csv"
+        mode: "0644"
+
+    - name: Reporte HTML (Linux software)
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../roles/software_inventory/templates/linux_software.html.j2"
+        dest: "{{ report_dir }}/linux_software_inventory.html"
+        mode: "0644"
+
+    - name: Reporte CSV (Windows software)
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../roles/software_inventory/templates/windows_software.csv.j2"
+        dest: "{{ report_dir }}/windows_software_inventory.csv"
+        mode: "0644"
+
+    - name: Reporte HTML (Windows software)
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../roles/software_inventory/templates/windows_software.html.j2"
+        dest: "{{ report_dir }}/windows_software_inventory.html"
+        mode: "0644"
+
+    - name: Mostrar rutas
+      ansible.builtin.debug:
+        msg:
+          - "Reportes generados en: {{ report_dir }}"
+          - "Linux software CSV : {{ report_dir }}/linux_software_inventory.csv"
+          - "Linux software HTML: {{ report_dir }}/linux_software_inventory.html"
+          - "Windows software CSV : {{ report_dir }}/windows_software_inventory.csv"
+          - "Windows software HTML: {{ report_dir }}/windows_software_inventory.html"

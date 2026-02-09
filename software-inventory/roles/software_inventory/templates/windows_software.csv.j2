@@ -1,0 +1,10 @@
+DisplayName,DisplayVersion,Publisher,InstallDate,Host,CheckedAt,Status,Message
+{% for hostres in audit_windows -%}
+{% if hostres.status | default('ok') == 'unavailable' -%}
+,,,,{{ hostres.host }},{{ hostres.checked_at }},{{ hostres.status }},{{ hostres.message }}
+{% else -%}
+{% for pkg in hostres.packages | default([]) -%}
+{{ pkg.DisplayName | default('') }},{{ pkg.DisplayVersion | default('') }},{{ pkg.Publisher | default('') }},{{ pkg.InstallDate | default('') }},{{ hostres.host }},{{ hostres.checked_at }},ok,
+{% endfor -%}
+{% endif -%}
+{% endfor -%}
