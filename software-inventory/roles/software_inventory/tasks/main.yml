@@ -50,8 +50,8 @@
         (baseline_linux_nevra_list | default([]))
         | map('trim')
         | reject('equalto', '')
-        | map('regex_replace', '\.[^.]+$', '')              # quita .arch
-        | map('regex_replace', '-[^-]+-[^-]+$', '')         # quita -release -version
+        | map('regex_replace', '\.[^.]+$', '')
+        | map('regex_replace', '-[^-]+-[^-]+$', '')
         | map('lower')
         | list
         | unique
