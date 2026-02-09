@@ -1,0 +1,100 @@
+---
+- name: Definir os_family seguro (aunque fallen facts)
+  ansible.builtin.set_fact:
+    os_family_safe: "{{ ansible_os_family | default('unknown') }}"
+
+- name: Detectar host sin facts (unavailable)
+  ansible.builtin.set_fact:
+    host_unavailable: "{{ os_family_safe == 'unknown' }}"
+
+- name: Marcar resultado como servidor no disponible
+  ansible.builtin.set_fact:
+    resource_inventory_result:
+      host: "{{ inventory_hostname }}"
+      os_family: "{{ os_family_safe }}"
+      checked_at: "{{ ansible_date_time.iso8601 | default('') }}"
+      status: "unavailable"
+      message: "Servidor no disponible"
+      commands: []
+  when: host_unavailable
+
+- name: Terminar role en host no disponible
+  ansible.builtin.meta: end_host
+  when: host_unavailable
+
+- name: Cargar commands_linux.yml
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/vars/commands_linux.yml"
+    name: cfg_linux
+  when: os_family_safe != 'Windows'
+
+- name: Cargar commands_windows.yml
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/vars/commands_windows.yml"
+    name: cfg_windows
+  when: os_family_safe == 'Windows'
+
+- name: Inicializar lista de resultados por host
+  ansible.builtin.set_fact:
+    collected_commands: []
+
+- name: Linux | Ejecutar comandos del catalogo
+  ansible.builtin.shell: "{{ item.cmd }}"
+  args:
+    executable: /bin/bash
+  register: linux_cmd_exec
+  changed_when: false
+  failed_when: false
+  loop: "{{ cfg_linux.commands_linux | default([]) }}"
+  when: os_family_safe != 'Windows'
+
+- name: Linux | Normalizar resultados
+  ansible.builtin.set_fact:
+    collected_commands: "{{ collected_commands + [ rec ] }}"
+  vars:
+    rec:
+      name: "{{ item.item.name | default('unnamed') }}"
+      command: "{{ item.item.cmd | default('') }}"
+      rc: "{{ item.rc | default(999) }}"
+      stdout: "{{ item.stdout | default('') }}"
+      stderr: "{{ item.stderr | default('') }}"
+  loop: "{{ linux_cmd_exec.results | default([]) }}"
+  when: os_family_safe != 'Windows'
+
+- name: Windows | Ejecutar comandos del catalogo
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = "Continue"
+      $out = (& {
+        {{ item.script }}
+      } | Out-String -Width 4000)
+      $out.TrimEnd()
+  register: win_cmd_exec
+  changed_when: false
+  failed_when: false
+  loop: "{{ cfg_windows.commands_windows | default([]) }}"
+  when: os_family_safe == 'Windows'
+
+- name: Windows | Normalizar resultados
+  ansible.builtin.set_fact:
+    collected_commands: "{{ collected_commands + [ rec ] }}"
+  vars:
+    rec:
+      name: "{{ item.item.name | default('unnamed') }}"
+      command: "{{ (item.item.script | default('') | string) }}"
+      rc: "{{ item.rc | default(999) }}"
+      stdout: "{{ (item.output | default('') | string) }}"
+      stderr: "{{ (item.error | default('') | string) }}"
+  loop: "{{ win_cmd_exec.results | default([]) }}"
+  when: os_family_safe == 'Windows'
+
+- name: Construir resultado final por host (ok)
+  ansible.builtin.set_fact:
+    resource_inventory_result:
+      host: "{{ inventory_hostname }}"
+      os_family: "{{ os_family_safe }}"
+      checked_at: "{{ ansible_date_time.iso8601 }}"
+      status: "ok"
+      message: ""
+      total_commands: "{{ collected_commands | length }}"
+      commands: "{{ collected_commands }}"

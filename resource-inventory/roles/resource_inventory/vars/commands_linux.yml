@@ -1,0 +1,10 @@
+---
+commands_linux:
+  - name: top_cpu_processes
+    cmd: "ps -eo pid,ppid,user,cmd,%cpu,%mem --sort=-%cpu | head -10"
+
+  - name: top_mem_processes
+    cmd: "ps -eo pid,ppid,user,cmd,%cpu,%mem --sort=-%mem | head -10"
+
+  - name: process_tree
+    cmd: "ps -e --forest -o pid,ppid,user,stat,etime,cmd | head -200"

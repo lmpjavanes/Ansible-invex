@@ -1,10 +1,10 @@
 # Render de reportes usando templates del rol.
-- name: Validar que report_dir esté definido
+- name: Validar que report_dir este definido
   ansible.builtin.assert:
     that:
       - report_dir is defined
       - (report_dir | string | length) > 0
-    fail_msg: "La variable 'report_dir' no está definida. Defínela en el play de control antes de renderizar."
+    fail_msg: "La variable 'report_dir' no esta definida. Definela en el play de control antes de renderizar."
 
 - name: Crear directorio del reporte en inv-ts-ansible (si no existe)
   ansible.builtin.file:

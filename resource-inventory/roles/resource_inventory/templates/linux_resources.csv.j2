@@ -1,0 +1,10 @@
+host,checked_at,status,state,message,command_name,rc,command,stdout,stderr
+{% for hostres in (audit_linux | default([])) %}
+{% if hostres.status | default('ok') == 'unavailable' %}
+{{ hostres.host | default('') }},{{ hostres.checked_at | default('') }},unavailable,,"{{ (hostres.message | default('Servidor no disponible') | string | trim | regex_replace('[\r\n]+',' ') | replace('"','""')) }}",,,,,
+{% else %}
+{% for cmd in (hostres.commands | default([])) %}
+{{ hostres.host | default('') }},{{ hostres.checked_at | default('') }},ok,,"",{{ cmd.name | default('') }},{{ cmd.rc | default('') }},"{{ (cmd.command | default('') | string | trim | replace('"','""')) }}","{{ (cmd.stdout | default('') | string | trim | regex_replace('[\r\n]+',' ') | replace('"','""')) }}","{{ (cmd.stderr | default('') | string | trim | regex_replace('[\r\n]+',' ') | replace('"','""')) }}"
+{% endfor %}
+{% endif %}
+{% endfor %}

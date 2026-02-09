@@ -1,0 +1,63 @@
+---
+- name: Validar que report_dir este definido
+  ansible.builtin.assert:
+    that:
+      - report_dir is defined
+      - (report_dir | string | length) > 0
+    fail_msg: "La variable 'report_dir' no esta definida. Definela en el play de control antes de renderizar."
+
+- name: Crear directorio del reporte en inv-ts-ansible (si no existe)
+  ansible.builtin.file:
+    path: "{{ report_dir }}"
+    state: directory
+    mode: "0755"
+  delegate_to: inv-ts-ansible
+  run_once: true
+
+- name: Asegurar variables audit_* (evitar undefined)
+  ansible.builtin.set_fact:
+    audit_linux: "{{ audit_linux | default([]) }}"
+    audit_windows: "{{ audit_windows | default([]) }}"
+  run_once: true
+
+- name: Reporte CSV (Linux resources)
+  ansible.builtin.template:
+    src: linux_resources.csv.j2
+    dest: "{{ report_dir }}/linux_resource_inventory.csv"
+    mode: "0644"
+  delegate_to: inv-ts-ansible
+  run_once: true
+
+- name: Reporte HTML (Linux resources)
+  ansible.builtin.template:
+    src: linux_resources.html.j2
+    dest: "{{ report_dir }}/linux_resource_inventory.html"
+    mode: "0644"
+  delegate_to: inv-ts-ansible
+  run_once: true
+
+- name: Reporte CSV (Windows resources)
+  ansible.builtin.template:
+    src: windows_resources.csv.j2
+    dest: "{{ report_dir }}/windows_resource_inventory.csv"
+    mode: "0644"
+  delegate_to: inv-ts-ansible
+  run_once: true
+
+- name: Reporte HTML (Windows resources)
+  ansible.builtin.template:
+    src: windows_resources.html.j2
+    dest: "{{ report_dir }}/windows_resource_inventory.html"
+    mode: "0644"
+  delegate_to: inv-ts-ansible
+  run_once: true
+
+- name: Mostrar rutas de salida
+  ansible.builtin.debug:
+    msg:
+      - "Reportes generados en: {{ report_dir }}"
+      - "Linux CSV : {{ report_dir }}/linux_resource_inventory.csv"
+      - "Linux HTML: {{ report_dir }}/linux_resource_inventory.html"
+      - "Windows CSV : {{ report_dir }}/windows_resource_inventory.csv"
+      - "Windows HTML: {{ report_dir }}/windows_resource_inventory.html"
+  run_once: true
