@@ -23,8 +23,13 @@
   hosts: invd-ts-ansible
   gather_facts: yes
   vars:
-    report_ts: "{{ ansible_date_time.iso8601_basic_short }}"
+    # Formato solicitado: YYYYMMDDHHMM (año-mes-dia-hora-minuto)
+    report_ts: "{{ ansible_date_time.year }}{{ ansible_date_time.month }}{{ ansible_date_time.day }}{{ ansible_date_time.hour }}{{ ansible_date_time.minute }}"
     report_dir: "/reportes_ansible/resource_inventory/{{ report_ts }}"
+    # Modo de salida:
+    # - consolidated: 1 CSV + 1 HTML por OS (default)
+    # - per_host: 1 CSV + 1 HTML por host (por OS)
+    report_output_mode: "{{ report_output_mode | default('consolidated') }}"
   tasks:
     - name: Crear directorio del reporte
       ansible.builtin.file:

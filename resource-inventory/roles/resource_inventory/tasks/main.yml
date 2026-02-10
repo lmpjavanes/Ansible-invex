@@ -3,7 +3,7 @@
   ansible.builtin.set_fact:
     os_family_safe: "{{ ansible_os_family | default('unknown') }}"
 
-- name: Detectar host no disponibles
+- name: Detectar host
   ansible.builtin.set_fact:
     host_unavailable: "{{ os_family_safe == 'unknown' }}"
 
@@ -22,7 +22,7 @@
   when: host_unavailable
 
 # =========================
-# Linux (deteccion mas fina)
+# Linux
 # =========================
 - name: Linux | Cargar catalogo vars
   ansible.builtin.include_vars:
@@ -122,37 +122,27 @@
   when: os_family_safe != 'Windows'
 
 # =========================
-# Windows (deteccion mas fina)
+# Windows
 # =========================
 - name: Windows | Obtener inventario
   ansible.windows.win_powershell:
     script: |
       $ErrorActionPreference = "SilentlyContinue"
-
       $cs   = Get-CimInstance Win32_ComputerSystem
       $bios = Get-CimInstance Win32_BIOS
       $os   = Get-CimInstance Win32_OperatingSystem
       $cpu  = Get-CimInstance Win32_Processor
 
-      # Disco total
       $disks = Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3"
       $diskSize = 0
       foreach ($d in $disks) { $diskSize += [int64]$d.Size }
 
-      # NIC por default route
       $route = Get-NetRoute -DestinationPrefix "0.0.0.0/0" | Sort-Object RouteMetric | Select-Object -First 1
       $nic = $null
-      if ($route) {
-        $nic = Get-NetAdapter -InterfaceIndex $route.IfIndex -ErrorAction SilentlyContinue
-      }
-      if (-not $nic) {
-        $nic = Get-NetAdapter | Where-Object {$_.Status -eq "Up"} | Sort-Object InterfaceMetric | Select-Object -First 1
-      }
+      if ($route) { $nic = Get-NetAdapter -InterfaceIndex $route.IfIndex -ErrorAction SilentlyContinue }
+      if (-not $nic) { $nic = Get-NetAdapter | Where-Object {$_.Status -eq "Up"} | Sort-Object InterfaceMetric | Select-Object -First 1 }
 
-      $ip = ""
-      $mac = ""
-      $link = ""
-      $vlan = ""
+      $ip = ""; $mac = ""; $link = ""; $vlan = ""
       if ($nic) {
         $mac = $nic.MacAddress
         $link = $nic.LinkSpeed
@@ -161,7 +151,6 @@
                 Where-Object {$_.IPAddress -notlike "169.254*"} | Select-Object -First 1
         if ($ipObj) { $ip = $ipObj.IPAddress }
 
-        # VLAN: NetAdapterVlan -> AdvancedProperty
         try {
           $v = Get-NetAdapterVlan -InterfaceAlias $nic.Name -ErrorAction Stop
           if ($v -and $v.VlanID -ne $null) { $vlan = [string]$v.VlanID }
@@ -176,11 +165,8 @@
         }
       }
 
-      # Hipervisor fino
       $m = ($cs.Manufacturer + " " + $cs.Model)
-      $hypervisor = ""
-      $isVirtual = $false
-
+      $hypervisor = ""; $isVirtual = $false
       if ($m -match "VMware") { $isVirtual = $true; $hypervisor = "VMware" }
       elseif ($m -match "Hyper-V|Virtual Machine" -and $cs.Manufacturer -match "Microsoft") { $isVirtual = $true; $hypervisor = "Hyper-V" }
       elseif ($m -match "KVM|QEMU") { $isVirtual = $true; $hypervisor = "KVM/QEMU" }
@@ -218,7 +204,7 @@
   failed_when: false
   when: os_family_safe == 'Windows'
 
-- name: Windows | Normalizar salida JSON a string
+- name: Windows | Normalizar salida JSON a string (WinRM puede devolver lista)
   ansible.builtin.set_fact:
     win_asset_json_str: >-
       {% set o = win_asset_json.output | default([]) %}
@@ -229,10 +215,10 @@
       {% endif %}
   when: os_family_safe == 'Windows'
 
-- name: Windows | Extraer solo el JSON
+- name: Windows | Extraer solo el JSON (robusto)
   ansible.builtin.set_fact:
     win_asset_json_only: >-
-      {% set matches = (win_asset_json_str | regex_findall('({.*})', multiline=False, ignorecase=False)) %}
+      {% set matches = (win_asset_json_str | regex_findall('({.*})')) %}
       {{ (matches | length > 0) | ternary((matches | last), '{}') }}
   when: os_family_safe == 'Windows'
 
