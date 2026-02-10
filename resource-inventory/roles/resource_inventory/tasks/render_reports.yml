@@ -14,7 +14,7 @@
   delegate_to: inv-ts-ansible
   run_once: true
 
-- name: Asegurar variables audit_* (evitar undefined)
+- name: Asegurar variables (evitar undefined)
   ansible.builtin.set_fact:
     audit_linux: "{{ audit_linux | default([]) }}"
     audit_windows: "{{ audit_windows | default([]) }}"

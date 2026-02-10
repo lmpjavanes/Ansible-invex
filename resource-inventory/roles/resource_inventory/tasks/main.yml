@@ -1,13 +1,13 @@
 ---
-- name: Definir os_family seguro (aunque fallen facts)
+- name: Definir os_family seguro
   ansible.builtin.set_fact:
     os_family_safe: "{{ ansible_os_family | default('unknown') }}"
 
-- name: Detectar host sin facts (unavailable)
+- name: Detectar host no disponibles
   ansible.builtin.set_fact:
     host_unavailable: "{{ os_family_safe == 'unknown' }}"
 
-- name: Marcar resultado como servidor no disponible (asset vacio)
+- name: Marcar resultado como servidor no disponible
   ansible.builtin.set_fact:
     resource_inventory_asset:
       host: "{{ inventory_hostname }}"
@@ -30,7 +30,7 @@
     name: cfg_linux
   when: os_family_safe != 'Windows'
 
-- name: Linux | Detectar hipervisor (fino) con systemd-detect-virt (si existe)
+- name: Linux | Detectar hipervisor
   ansible.builtin.shell: "{{ cfg_linux.hypervisor_detect_cmd }}"
   args:
     executable: /bin/bash
@@ -39,7 +39,7 @@
   failed_when: false
   when: os_family_safe != 'Windows'
 
-- name: Linux | Obtener disk bytes (best effort)
+- name: Linux | Obtener disk bytes
   ansible.builtin.shell: "{{ cfg_linux.disk_total_bytes_cmd }}"
   args:
     executable: /bin/bash
@@ -48,7 +48,7 @@
   failed_when: false
   when: os_family_safe != 'Windows'
 
-- name: Linux | Obtener velocidad de red (best effort)
+- name: Linux | Obtener velocidad de red
   ansible.builtin.shell: "{{ cfg_linux.nic_speed_cmd }}"
   args:
     executable: /bin/bash
@@ -57,7 +57,7 @@
   failed_when: false
   when: os_family_safe != 'Windows'
 
-- name: Linux | Obtener VLAN (deteccion mas fina)
+- name: Linux | Obtener VLAN
   ansible.builtin.shell: "{{ cfg_linux.vlan_id_cmd }}"
   args:
     executable: /bin/bash
@@ -66,7 +66,7 @@
   failed_when: false
   when: os_family_safe != 'Windows'
 
-- name: Linux | Obtener fecha de instalacion (best effort)
+- name: Linux | Obtener fecha de instalacion
   ansible.builtin.shell: "{{ cfg_linux.install_date_cmd }}"
   args:
     executable: /bin/bash
@@ -124,7 +124,7 @@
 # =========================
 # Windows (deteccion mas fina)
 # =========================
-- name: Windows | Obtener inventario (JSON)
+- name: Windows | Obtener inventario
   ansible.windows.win_powershell:
     script: |
       $ErrorActionPreference = "SilentlyContinue"
@@ -218,7 +218,7 @@
   failed_when: false
   when: os_family_safe == 'Windows'
 
-- name: Windows | Normalizar salida JSON a string (WinRM devuelve lista)
+- name: Windows | Normalizar salida JSON a string
   ansible.builtin.set_fact:
     win_asset_json_str: >-
       {% set o = win_asset_json.output | default([]) %}

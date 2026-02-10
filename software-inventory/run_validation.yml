@@ -57,7 +57,7 @@
           }}
       loop: "{{ groups['LINUX'] | default([]) }}"
 
-    - name: Obtener baseline Linux (solo nombres) desde el primer host Linux
+    - name: Obtener base Linux (solo nombres) desde el primer host Linux
       ansible.builtin.set_fact:
         baseline_linux_names: >-
           {{
@@ -86,7 +86,6 @@
           }}
       loop: "{{ groups['WINDOWS'] | default([]) }}"
 
-    # Renderizas reportes usando los templates del rol (AAP-friendly).
     - name: Renderizar reportes usando templates del rol
       ansible.builtin.include_role:
         name: software_inventory

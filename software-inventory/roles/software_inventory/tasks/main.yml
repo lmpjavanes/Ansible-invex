@@ -1,13 +1,13 @@
-- name: Inicializar listas de software/servicios
+- name: Inicializar listas de software
   ansible.builtin.set_fact:
     installed_packages: []
     installed_services: []
 
-- name: Definir os_family seguro (aunque fallen facts)
+- name: Definir os_family
   ansible.builtin.set_fact:
     os_family_safe: "{{ ansible_os_family | default('unknown') }}"
 
-- name: Detectar host sin facts (unavailable)
+- name: Detectar host no disponibles
   ansible.builtin.set_fact:
     host_unavailable: "{{ os_family_safe == 'unknown' }}"
 
@@ -30,15 +30,15 @@
   when: host_unavailable
 
 # =========================
-# Baseline Linux desde base_linux.yml (LISTA NEVRA -> SOLO nombre)
+# Base Linux desde base_linux.yml (LISTA NEVRA -> SOLO nombre)
 # =========================
-- name: Linux | Cargar base_linux.yml desde el rol (AAP best practice)
+- name: Linux | Cargar base_linux.yml
   ansible.builtin.include_vars:
     file: "{{ role_path }}/vars/base_linux.yml"
     name: base_cfg
   when: os_family_safe != 'Windows'
 
-- name: Linux | Tomar baseline como lista (NEVRA) desde base_linux.yml
+- name: Linux | Tomar lista (NEVRA) desde base_linux.yml
   ansible.builtin.set_fact:
     baseline_linux_nevra_list: "{{ base_cfg.base_linux | default([]) }}"
   when: os_family_safe != 'Windows'
@@ -67,7 +67,7 @@
   when: os_family_safe != 'Windows'
 
 # Solo para RHEL family
-- name: Linux (RHEL family) | Obtener INSTALLTIME de RPM y convertir a ISO8601 (UTC) por paquete
+- name: Linux (RHEL family) | Obtener INSTALLTIME
   ansible.builtin.shell: |
     rpm -qa --qf '%{NAME}|%{INSTALLTIME}\n' | awk -F'|' '
       $2 ~ /^[0-9]+$/ && $2 > 0 {
@@ -85,7 +85,7 @@
   changed_when: false
   when: os_family_safe == 'RedHat'
 
-- name: Linux (RHEL family) | Construir mapa nombre->install_date (string ISO8601)
+- name: Linux (RHEL family) | Construir mapa nombre->install_date
   ansible.builtin.set_fact:
     rpm_install_time_map: >-
       {%- set m = {} -%}
@@ -98,7 +98,7 @@
       {{ m }}
   when: os_family_safe == 'RedHat'
 
-- name: Linux (RHEL family) | Obtener Summary de paquetes RPM
+- name: Linux (RHEL family) | Obtener Summary de paquetes
   ansible.builtin.shell: |
     rpm -qa --qf '%{NAME}|%{SUMMARY}\n'
   args:
@@ -149,11 +149,11 @@
     installed_packages: "{{ installed_packages | sort(attribute='package_full') }}"
   when: os_family_safe != 'Windows'
 
-- name: Linux | Recolectar servicios (systemd)
+- name: Linux | Recolectar servicios
   ansible.builtin.service_facts:
   when: os_family_safe != 'Windows'
 
-- name: Linux | Normalizar servicios (systemd)
+- name: Linux | Normalizar servicios
   ansible.builtin.set_fact:
     installed_services: >-
       {{
