@@ -218,9 +218,26 @@
   failed_when: false
   when: os_family_safe == 'Windows'
 
+- name: Windows | Normalizar salida JSON a string (WinRM devuelve lista)
+  ansible.builtin.set_fact:
+    win_asset_json_str: >-
+      {% set o = win_asset_json.output | default([]) %}
+      {% if o is string %}
+      {{ o | trim }}
+      {% else %}
+      {{ (o | join('') | trim) }}
+      {% endif %}
+  when: os_family_safe == 'Windows'
+
+- name: Windows | Extraer solo el JSON (por si WinRM agrega texto)
+  ansible.builtin.set_fact:
+    win_asset_json_only: >-
+      {{ (win_asset_json_str | regex_search('({.*})', '\\1')) | default('{}') }}
+  when: os_family_safe == 'Windows'
+
 - name: Windows | Parsear JSON
   ansible.builtin.set_fact:
-    win_asset: "{{ (win_asset_json.output | default('{}')) | from_json }}"
+    win_asset: "{{ win_asset_json_only | from_json }}"
   when: os_family_safe == 'Windows'
 
 - name: Windows | Construir asset inventory final
