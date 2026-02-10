@@ -1,10 +1,31 @@
 ---
-commands_linux:
-  - name: top_cpu_processes
-    cmd: "ps -eo pid,ppid,user,cmd,%cpu,%mem --sort=-%cpu | head -10"
-
-  - name: top_mem_processes
-    cmd: "ps -eo pid,ppid,user,cmd,%cpu,%mem --sort=-%mem | head -10"
-
-  - name: process_tree
-    cmd: "ps -e --forest -o pid,ppid,user,stat,etime,cmd | head -200"
+# Comandos "best effort" para campos que no siempre vienen en facts.
+# Nota: el play para Linux corre con become: yes.
+disk_total_bytes_cmd: "lsblk -b -dn -o SIZE 2>/dev/null | awk '{s+=$1} END{print s+0}'"
+nic_speed_cmd: |
+  IFACE="{{ ansible_default_ipv4.interface | default('') }}"
+  if [ -n "$IFACE" ] && command -v ethtool >/dev/null 2>&1; then
+    ethtool "$IFACE" 2>/dev/null | awk -F': ' '/Speed:/{print $2; exit}'
+  else
+    echo ""
+  fi
+vlan_id_cmd: |
+  IFACE="{{ ansible_default_ipv4.interface | default('') }}"
+  if [ -z "$IFACE" ]; then echo ""; exit 0; fi
+  if echo "$IFACE" | grep -q '\.'; then
+    echo "$IFACE" | awk -F'.' '{print $2}'
+    exit 0
+  fi
+  if command -v ip >/dev/null 2>&1; then
+    ip -d link show dev "$IFACE" 2>/dev/null | awk '/vlan id/{for(i=1;i<=NF;i++) if($i=="id"){print $(i+1); exit}}'
+  else
+    echo ""
+  fi
+install_date_cmd: |
+  if command -v rpm >/dev/null 2>&1; then
+    rpm -q --qf '%{INSTALLTIME:date}\n' basesystem 2>/dev/null | head -1
+  elif command -v dpkg-query >/dev/null 2>&1; then
+    stat -c '%y' /var/log/installer 2>/dev/null | cut -d'.' -f1 || echo ""
+  else
+    stat -c '%y' / 2>/dev/null | cut -d'.' -f1 || echo ""
+  fi

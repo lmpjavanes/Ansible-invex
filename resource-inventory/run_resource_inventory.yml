@@ -43,14 +43,13 @@
       vars:
         host_result: >-
           {{
-            hostvars[item].resource_inventory_result
+            hostvars[item].resource_inventory_asset
             | default({
                 'host': item,
                 'os_family': 'Linux',
-                'checked_at': ansible_date_time.iso8601,
                 'status': 'unavailable',
-                'message': 'Servidor no disponible',
-                'commands': []
+                'checked_at': ansible_date_time.iso8601,
+                'message': 'Servidor no disponible'
               })
           }}
       loop: "{{ groups['LINUX'] | default([]) }}"
@@ -61,14 +60,13 @@
       vars:
         host_result: >-
           {{
-            hostvars[item].resource_inventory_result
+            hostvars[item].resource_inventory_asset
             | default({
                 'host': item,
                 'os_family': 'Windows',
-                'checked_at': ansible_date_time.iso8601,
                 'status': 'unavailable',
-                'message': 'Servidor no disponible',
-                'commands': []
+                'checked_at': ansible_date_time.iso8601,
+                'message': 'Servidor no disponible'
               })
           }}
       loop: "{{ groups['WINDOWS'] | default([]) }}"

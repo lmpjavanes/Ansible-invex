@@ -7,41 +7,65 @@
     body { font-family: Arial, sans-serif; }
     table { border-collapse: collapse; width: 100%; }
     th, td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }
-    th { background: #f2f2f2; }
-    pre { white-space: pre-wrap; word-wrap: break-word; margin: 0; }
+    th { background: #f2f2f2; position: sticky; top: 0; }
     .bad { color: #b00020; font-weight: bold; }
   </style>
 </head>
 <body>
   <h2>Linux Resource Inventory</h2>
-  {% for hostres in (audit_linux | default([])) %}
-    <h3>{{ hostres.host }}</h3>
-    <p>
-      <b>Checked at:</b> {{ hostres.checked_at }} |
-      <b>Status:</b>
-      {% if hostres.status == 'unavailable' %}<span class="bad">unavailable</span>{% else %}ok{% endif %}
-    </p>
-
-    {% if hostres.status == 'unavailable' %}
-      <p class="bad">{{ hostres.message | default('Servidor no disponible') }}</p>
-    {% else %}
-      <table>
-        <tr>
-          <th>Command</th>
-          <th>RC</th>
-          <th>STDOUT</th>
-          <th>STDERR</th>
-        </tr>
-        {% for cmd in (hostres.commands | default([])) %}
-        <tr>
-          <td><b>{{ cmd.name }}</b><br><pre>{{ cmd.command }}</pre></td>
-          <td>{{ cmd.rc }}</td>
-          <td><pre>{{ cmd.stdout }}</pre></td>
-          <td><pre>{{ cmd.stderr }}</pre></td>
-        </tr>
-        {% endfor %}
-      </table>
-    {% endif %}
-  {% endfor %}
+  <table>
+    <tr>
+      <th>Nombre del servidor</th>
+      <th>Tipo (Físico/Virtual)</th>
+      <th>Estado</th>
+      <th>Marca</th>
+      <th>Modelo</th>
+      <th>No. Serie</th>
+      <th>Tipo Proc.</th>
+      <th>No. Procs</th>
+      <th>Modelo Proc.</th>
+      <th>RAM (MB)</th>
+      <th>Disco (GB)</th>
+      <th>Vel. Red</th>
+      <th>Hipervisor</th>
+      <th>SO</th>
+      <th>Versión SO</th>
+      <th>Arquitectura</th>
+      <th>Fecha instalación</th>
+      <th>IP</th>
+      <th>MAC</th>
+      <th>VLAN</th>
+      <th>Checked at</th>
+      <th>Status</th>
+      <th>Mensaje</th>
+    </tr>
+    {% for r in (audit_linux | default([])) %}
+    <tr>
+      <td>{{ r.server_name | default(r.host | default('')) }}</td>
+      <td>{{ r.server_type | default('') }}</td>
+      <td>{{ r.server_state | default('') }}</td>
+      <td>{{ r.brand | default('') }}</td>
+      <td>{{ r.model | default('') }}</td>
+      <td>{{ r.serial_number | default('') }}</td>
+      <td>{{ r.processor_type | default('') }}</td>
+      <td>{{ r.processor_count | default('') }}</td>
+      <td>{{ r.processor_model | default('') }}</td>
+      <td>{{ r.ram_mb | default('') }}</td>
+      <td>{{ r.disk_gb | default('') }}</td>
+      <td>{{ r.network_speed | default('') }}</td>
+      <td>{{ r.hypervisor_type | default('') }}</td>
+      <td>{{ r.os_type | default('') }}</td>
+      <td>{{ r.os_version | default('') }}</td>
+      <td>{{ r.os_arch | default('') }}</td>
+      <td>{{ r.install_date | default('') }}</td>
+      <td>{{ r.ip_assigned | default('') }}</td>
+      <td>{{ r.mac_assigned | default('') }}</td>
+      <td>{{ r.vlan_assigned | default('') }}</td>
+      <td>{{ r.checked_at | default('') }}</td>
+      <td>{{ r.status | default('') }}</td>
+      <td class="{{ 'bad' if (r.status | default('')) == 'unavailable' else '' }}">{{ r.message | default('') }}</td>
+    </tr>
+    {% endfor %}
+  </table>
 </body>
 </html>

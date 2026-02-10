@@ -7,94 +7,191 @@
   ansible.builtin.set_fact:
     host_unavailable: "{{ os_family_safe == 'unknown' }}"
 
-- name: Marcar resultado como servidor no disponible
+- name: Marcar resultado como servidor no disponible (asset vacio)
   ansible.builtin.set_fact:
-    resource_inventory_result:
+    resource_inventory_asset:
       host: "{{ inventory_hostname }}"
       os_family: "{{ os_family_safe }}"
       checked_at: "{{ ansible_date_time.iso8601 | default('') }}"
       status: "unavailable"
       message: "Servidor no disponible"
-      commands: []
   when: host_unavailable
 
 - name: Terminar role en host no disponible
   ansible.builtin.meta: end_host
   when: host_unavailable
 
-- name: Cargar commands_linux.yml
+# =========================
+# Linux
+# =========================
+- name: Linux | Cargar catalogo vars
   ansible.builtin.include_vars:
     file: "{{ role_path }}/vars/commands_linux.yml"
     name: cfg_linux
   when: os_family_safe != 'Windows'
 
-- name: Cargar commands_windows.yml
-  ansible.builtin.include_vars:
-    file: "{{ role_path }}/vars/commands_windows.yml"
-    name: cfg_windows
-  when: os_family_safe == 'Windows'
-
-- name: Inicializar lista de resultados por host
-  ansible.builtin.set_fact:
-    collected_commands: []
-
-- name: Linux | Ejecutar comandos del catalogo
-  ansible.builtin.shell: "{{ item.cmd }}"
+- name: Linux | Obtener disk bytes (best effort)
+  ansible.builtin.shell: "{{ cfg_linux.disk_total_bytes_cmd }}"
   args:
     executable: /bin/bash
-  register: linux_cmd_exec
+  register: linux_disk_bytes
   changed_when: false
   failed_when: false
-  loop: "{{ cfg_linux.commands_linux | default([]) }}"
   when: os_family_safe != 'Windows'
 
-- name: Linux | Normalizar resultados
-  ansible.builtin.set_fact:
-    collected_commands: "{{ collected_commands + [ rec ] }}"
-  vars:
-    rec:
-      name: "{{ item.item.name | default('unnamed') }}"
-      command: "{{ item.item.cmd | default('') }}"
-      rc: "{{ item.rc | default(999) }}"
-      stdout: "{{ item.stdout | default('') }}"
-      stderr: "{{ item.stderr | default('') }}"
-  loop: "{{ linux_cmd_exec.results | default([]) }}"
-  when: os_family_safe != 'Windows'
-
-- name: Windows | Ejecutar comandos del catalogo
-  ansible.windows.win_powershell:
-    script: |
-      $ErrorActionPreference = "Continue"
-      $out = (& {
-        {{ item.script }}
-      } | Out-String -Width 4000)
-      $out.TrimEnd()
-  register: win_cmd_exec
+- name: Linux | Obtener velocidad de red (best effort)
+  ansible.builtin.shell: "{{ cfg_linux.nic_speed_cmd }}"
+  args:
+    executable: /bin/bash
+  register: linux_nic_speed
   changed_when: false
   failed_when: false
-  loop: "{{ cfg_windows.commands_windows | default([]) }}"
-  when: os_family_safe == 'Windows'
+  when: os_family_safe != 'Windows'
 
-- name: Windows | Normalizar resultados
-  ansible.builtin.set_fact:
-    collected_commands: "{{ collected_commands + [ rec ] }}"
-  vars:
-    rec:
-      name: "{{ item.item.name | default('unnamed') }}"
-      command: "{{ (item.item.script | default('') | string) }}"
-      rc: "{{ item.rc | default(999) }}"
-      stdout: "{{ (item.output | default('') | string) }}"
-      stderr: "{{ (item.error | default('') | string) }}"
-  loop: "{{ win_cmd_exec.results | default([]) }}"
-  when: os_family_safe == 'Windows'
+- name: Linux | Obtener VLAN (best effort)
+  ansible.builtin.shell: "{{ cfg_linux.vlan_id_cmd }}"
+  args:
+    executable: /bin/bash
+  register: linux_vlan
+  changed_when: false
+  failed_when: false
+  when: os_family_safe != 'Windows'
 
-- name: Construir resultado final por host (ok)
+- name: Linux | Obtener fecha de instalacion (best effort)
+  ansible.builtin.shell: "{{ cfg_linux.install_date_cmd }}"
+  args:
+    executable: /bin/bash
+  register: linux_install_date
+  changed_when: false
+  failed_when: false
+  when: os_family_safe != 'Windows'
+
+- name: Linux | Construir asset inventory
   ansible.builtin.set_fact:
-    resource_inventory_result:
+    resource_inventory_asset:
       host: "{{ inventory_hostname }}"
-      os_family: "{{ os_family_safe }}"
+      os_family: "Linux"
       checked_at: "{{ ansible_date_time.iso8601 }}"
       status: "ok"
       message: ""
-      total_commands: "{{ collected_commands | length }}"
-      commands: "{{ collected_commands }}"
+      server_name: "{{ ansible_facts.hostname | default(inventory_hostname) }}"
+      server_type: >-
+        {{ 'Virtual' if (ansible_facts.virtualization_role | default('') == 'guest') else 'Fisico' }}
+      server_state: "Reachable"
+      brand: "{{ ansible_facts.system_vendor | default('') }}"
+      model: "{{ ansible_facts.product_name | default('') }}"
+      serial_number: "{{ ansible_facts.product_serial | default('') }}"
+      processor_type: "CPU"
+      processor_count: "{{ ansible_facts.processor_count | default('') }}"
+      processor_model: "{{ ansible_facts.processor[-1] | default(ansible_facts.processor[0] | default('')) }}"
+      ram_mb: "{{ ansible_facts.memtotal_mb | default('') }}"
+      disk_gb: >-
+        {{ ((linux_disk_bytes.stdout | default('0') | int) / 1073741824) | round(2) }}
+      network_speed: "{{ (linux_nic_speed.stdout | default('') | string | trim) }}"
+      hypervisor_type: "{{ ansible_facts.virtualization_type | default('') }}"
+      os_type: "{{ ansible_facts.distribution | default('Linux') }}"
+      os_version: "{{ ansible_facts.distribution_version | default('') }}"
+      os_arch: "{{ ansible_facts.architecture | default('') }}"
+      install_date: "{{ (linux_install_date.stdout | default('') | string | trim) }}"
+      ip_assigned: "{{ ansible_facts.default_ipv4.address | default('') }}"
+      mac_assigned: "{{ ansible_facts.default_ipv4.macaddress | default('') }}"
+      vlan_assigned: "{{ (linux_vlan.stdout | default('') | string | trim) }}"
+  when: os_family_safe != 'Windows'
+
+# =========================
+# Windows
+# =========================
+- name: Windows | Obtener inventario (JSON)
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = "SilentlyContinue"
+
+      $cs = Get-CimInstance Win32_ComputerSystem
+      $bios = Get-CimInstance Win32_BIOS
+      $os = Get-CimInstance Win32_OperatingSystem
+      $cpu = Get-CimInstance Win32_Processor
+      $disks = Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3"
+      $diskSize = 0
+      foreach ($d in $disks) { $diskSize += [int64]$d.Size }
+
+      $nic = Get-NetAdapter | Where-Object {$_.Status -eq "Up"} | Select-Object -First 1
+      $ip = ""
+      $mac = ""
+      $link = ""
+      $vlan = ""
+      if ($nic) {
+        $mac = $nic.MacAddress
+        $link = $nic.LinkSpeed
+        try { $vlan = (Get-NetAdapter -Name $nic.Name).VlanID } catch {}
+        try {
+          $ipObj = Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $nic.IfIndex | Where-Object {$_.IPAddress -notlike "169.254*"} | Select-Object -First 1
+          if ($ipObj) { $ip = $ipObj.IPAddress }
+        } catch {}
+      }
+
+      $isVirtual = $false
+      if ($cs.Model -match "Virtual|VMware|KVM|Hyper-V|VirtualBox" -or $cs.Manufacturer -match "VMware|Microsoft|Xen") { $isVirtual = $true }
+
+      $obj = [ordered]@{
+        server_name       = $env:COMPUTERNAME
+        server_type       = $(if ($isVirtual) { "Virtual" } else { "Fisico" })
+        server_state      = "Reachable"
+        brand             = $cs.Manufacturer
+        model             = $cs.Model
+        serial_number     = $bios.SerialNumber
+        processor_type    = "CPU"
+        processor_count   = ($cpu | Measure-Object).Count
+        processor_model   = (($cpu | Select-Object -First 1).Name)
+        ram_mb            = [math]::Round($cs.TotalPhysicalMemory / 1MB, 0)
+        disk_gb           = [math]::Round($diskSize / 1GB, 2)
+        network_speed     = "$link"
+        hypervisor_type   = $(if ($isVirtual) { $cs.Model } else { "" })
+        os_type           = $os.Caption
+        os_version        = $os.Version
+        os_arch           = $os.OSArchitecture
+        install_date      = ($os.InstallDate)
+        ip_assigned       = $ip
+        mac_assigned      = $mac
+        vlan_assigned     = "$vlan"
+      }
+
+      $obj | ConvertTo-Json -Compress
+  register: win_asset_json
+  changed_when: false
+  failed_when: false
+  when: os_family_safe == 'Windows'
+
+- name: Windows | Parsear JSON
+  ansible.builtin.set_fact:
+    win_asset: "{{ (win_asset_json.output | default('{}')) | from_json }}"
+  when: os_family_safe == 'Windows'
+
+- name: Windows | Construir asset inventory final
+  ansible.builtin.set_fact:
+    resource_inventory_asset:
+      host: "{{ inventory_hostname }}"
+      os_family: "Windows"
+      checked_at: "{{ ansible_date_time.iso8601 }}"
+      status: "ok"
+      message: ""
+      server_name: "{{ win_asset.server_name | default(inventory_hostname) }}"
+      server_type: "{{ win_asset.server_type | default('') }}"
+      server_state: "{{ win_asset.server_state | default('') }}"
+      brand: "{{ win_asset.brand | default('') }}"
+      model: "{{ win_asset.model | default('') }}"
+      serial_number: "{{ win_asset.serial_number | default('') }}"
+      processor_type: "{{ win_asset.processor_type | default('') }}"
+      processor_count: "{{ win_asset.processor_count | default('') }}"
+      processor_model: "{{ win_asset.processor_model | default('') }}"
+      ram_mb: "{{ win_asset.ram_mb | default('') }}"
+      disk_gb: "{{ win_asset.disk_gb | default('') }}"
+      network_speed: "{{ win_asset.network_speed | default('') }}"
+      hypervisor_type: "{{ win_asset.hypervisor_type | default('') }}"
+      os_type: "{{ win_asset.os_type | default('Windows') }}"
+      os_version: "{{ win_asset.os_version | default('') }}"
+      os_arch: "{{ win_asset.os_arch | default('') }}"
+      install_date: "{{ win_asset.install_date | default('') }}"
+      ip_assigned: "{{ win_asset.ip_assigned | default('') }}"
+      mac_assigned: "{{ win_asset.mac_assigned | default('') }}"
+      vlan_assigned: "{{ win_asset.vlan_assigned | default('') }}"
+  when: os_family_safe == 'Windows'
