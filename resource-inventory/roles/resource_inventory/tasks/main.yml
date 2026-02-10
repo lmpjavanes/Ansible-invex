@@ -229,10 +229,11 @@
       {% endif %}
   when: os_family_safe == 'Windows'
 
-- name: Windows | Extraer solo el JSON (por si WinRM agrega texto)
+- name: Windows | Extraer solo el JSON
   ansible.builtin.set_fact:
     win_asset_json_only: >-
-      {{ (win_asset_json_str | regex_search('({.*})', '\\1')) | default('{}') }}
+      {% set matches = (win_asset_json_str | regex_findall('({.*})', multiline=False, ignorecase=False)) %}
+      {{ (matches | length > 0) | ternary((matches | last), '{}') }}
   when: os_family_safe == 'Windows'
 
 - name: Windows | Parsear JSON
