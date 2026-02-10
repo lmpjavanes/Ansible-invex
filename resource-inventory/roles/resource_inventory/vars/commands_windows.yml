@@ -1,5 +1,6 @@
 ---
-# Catalogo Windows (placeholder, inventario se ejecuta en tasks/main.yml via CIM)
+# Nota: el inventario Windows se obtiene por CIM/WMI en tasks/main.yml.
+# Se deja este archivo para mantener la estructura y para futuras extensiones.
 commands_windows:
   - name: inventory_json
     script: |

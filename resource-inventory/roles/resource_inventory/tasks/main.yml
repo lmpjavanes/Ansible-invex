@@ -22,12 +22,21 @@
   when: host_unavailable
 
 # =========================
-# Linux
+# Linux (deteccion mas fina)
 # =========================
 - name: Linux | Cargar catalogo vars
   ansible.builtin.include_vars:
     file: "{{ role_path }}/vars/commands_linux.yml"
     name: cfg_linux
+  when: os_family_safe != 'Windows'
+
+- name: Linux | Detectar hipervisor (fino) con systemd-detect-virt (si existe)
+  ansible.builtin.shell: "{{ cfg_linux.hypervisor_detect_cmd }}"
+  args:
+    executable: /bin/bash
+  register: linux_hv
+  changed_when: false
+  failed_when: false
   when: os_family_safe != 'Windows'
 
 - name: Linux | Obtener disk bytes (best effort)
@@ -48,7 +57,7 @@
   failed_when: false
   when: os_family_safe != 'Windows'
 
-- name: Linux | Obtener VLAN (best effort)
+- name: Linux | Obtener VLAN (deteccion mas fina)
   ansible.builtin.shell: "{{ cfg_linux.vlan_id_cmd }}"
   args:
     executable: /bin/bash
@@ -64,6 +73,20 @@
   register: linux_install_date
   changed_when: false
   failed_when: false
+  when: os_family_safe != 'Windows'
+
+- name: Linux | Normalizar hipervisor a nombres comunes
+  ansible.builtin.set_fact:
+    linux_hypervisor_fine: >-
+      {%- set hv = (linux_hv.stdout | default('') | string | trim | lower) -%}
+      {%- if hv in ['kvm','qemu'] -%}KVM/QEMU
+      {%- elif hv == 'vmware' -%}VMware
+      {%- elif hv in ['microsoft','hyperv'] -%}Hyper-V
+      {%- elif hv == 'xen' -%}Xen
+      {%- elif hv in ['oracle','vbox','virtualbox'] -%}VirtualBox
+      {%- elif hv == 'none' or hv == '' -%}{{ ansible_facts.virtualization_type | default('') }}
+      {%- else -%}{{ hv }}
+      {%- endif -%}
   when: os_family_safe != 'Windows'
 
 - name: Linux | Construir asset inventory
@@ -88,7 +111,7 @@
       disk_gb: >-
         {{ ((linux_disk_bytes.stdout | default('0') | int) / 1073741824) | round(2) }}
       network_speed: "{{ (linux_nic_speed.stdout | default('') | string | trim) }}"
-      hypervisor_type: "{{ ansible_facts.virtualization_type | default('') }}"
+      hypervisor_type: "{{ linux_hypervisor_fine | default(ansible_facts.virtualization_type | default('')) }}"
       os_type: "{{ ansible_facts.distribution | default('Linux') }}"
       os_version: "{{ ansible_facts.distribution_version | default('') }}"
       os_arch: "{{ ansible_facts.architecture | default('') }}"
@@ -99,22 +122,33 @@
   when: os_family_safe != 'Windows'
 
 # =========================
-# Windows
+# Windows (deteccion mas fina)
 # =========================
 - name: Windows | Obtener inventario (JSON)
   ansible.windows.win_powershell:
     script: |
       $ErrorActionPreference = "SilentlyContinue"
 
-      $cs = Get-CimInstance Win32_ComputerSystem
+      $cs   = Get-CimInstance Win32_ComputerSystem
       $bios = Get-CimInstance Win32_BIOS
-      $os = Get-CimInstance Win32_OperatingSystem
-      $cpu = Get-CimInstance Win32_Processor
+      $os   = Get-CimInstance Win32_OperatingSystem
+      $cpu  = Get-CimInstance Win32_Processor
+
+      # Disco total
       $disks = Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3"
       $diskSize = 0
       foreach ($d in $disks) { $diskSize += [int64]$d.Size }
 
-      $nic = Get-NetAdapter | Where-Object {$_.Status -eq "Up"} | Select-Object -First 1
+      # NIC por default route
+      $route = Get-NetRoute -DestinationPrefix "0.0.0.0/0" | Sort-Object RouteMetric | Select-Object -First 1
+      $nic = $null
+      if ($route) {
+        $nic = Get-NetAdapter -InterfaceIndex $route.IfIndex -ErrorAction SilentlyContinue
+      }
+      if (-not $nic) {
+        $nic = Get-NetAdapter | Where-Object {$_.Status -eq "Up"} | Sort-Object InterfaceMetric | Select-Object -First 1
+      }
+
       $ip = ""
       $mac = ""
       $link = ""
@@ -122,15 +156,38 @@
       if ($nic) {
         $mac = $nic.MacAddress
         $link = $nic.LinkSpeed
-        try { $vlan = (Get-NetAdapter -Name $nic.Name).VlanID } catch {}
+
+        $ipObj = Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $nic.IfIndex |
+                Where-Object {$_.IPAddress -notlike "169.254*"} | Select-Object -First 1
+        if ($ipObj) { $ip = $ipObj.IPAddress }
+
+        # VLAN: NetAdapterVlan -> AdvancedProperty
         try {
-          $ipObj = Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $nic.IfIndex | Where-Object {$_.IPAddress -notlike "169.254*"} | Select-Object -First 1
-          if ($ipObj) { $ip = $ipObj.IPAddress }
+          $v = Get-NetAdapterVlan -InterfaceAlias $nic.Name -ErrorAction Stop
+          if ($v -and $v.VlanID -ne $null) { $vlan = [string]$v.VlanID }
         } catch {}
+        if (-not $vlan) {
+          try {
+            $adv = Get-NetAdapterAdvancedProperty -Name $nic.Name |
+                   Where-Object { $_.DisplayName -match "VLAN|Vlan|VLAN ID|Vlan ID" } |
+                   Select-Object -First 1
+            if ($adv) { $vlan = [string]$adv.DisplayValue }
+          } catch {}
+        }
       }
 
+      # Hipervisor fino
+      $m = ($cs.Manufacturer + " " + $cs.Model)
+      $hypervisor = ""
       $isVirtual = $false
-      if ($cs.Model -match "Virtual|VMware|KVM|Hyper-V|VirtualBox" -or $cs.Manufacturer -match "VMware|Microsoft|Xen") { $isVirtual = $true }
+
+      if ($m -match "VMware") { $isVirtual = $true; $hypervisor = "VMware" }
+      elseif ($m -match "Hyper-V|Virtual Machine" -and $cs.Manufacturer -match "Microsoft") { $isVirtual = $true; $hypervisor = "Hyper-V" }
+      elseif ($m -match "KVM|QEMU") { $isVirtual = $true; $hypervisor = "KVM/QEMU" }
+      elseif ($m -match "Xen") { $isVirtual = $true; $hypervisor = "Xen" }
+      elseif ($m -match "VirtualBox") { $isVirtual = $true; $hypervisor = "VirtualBox" }
+      elseif ($m -match "Amazon EC2") { $isVirtual = $true; $hypervisor = "AWS (Xen/Nitro)" }
+      elseif ($cs.HypervisorPresent) { $isVirtual = $true; $hypervisor = "Hypervisor (detectado)" }
 
       $obj = [ordered]@{
         server_name       = $env:COMPUTERNAME
@@ -145,7 +202,7 @@
         ram_mb            = [math]::Round($cs.TotalPhysicalMemory / 1MB, 0)
         disk_gb           = [math]::Round($diskSize / 1GB, 2)
         network_speed     = "$link"
-        hypervisor_type   = $(if ($isVirtual) { $cs.Model } else { "" })
+        hypervisor_type   = $hypervisor
         os_type           = $os.Caption
         os_version        = $os.Version
         os_arch           = $os.OSArchitecture
