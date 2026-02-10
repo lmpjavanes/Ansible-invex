@@ -19,7 +19,7 @@
     - software_inventory
 
 - name: Generar reportes (control)
-  hosts: inv-ts-ansible
+  hosts: invd-ts-ansible
   gather_facts: yes
   vars:
     report_ts: "{{ ansible_date_time.iso8601_basic_short }}"

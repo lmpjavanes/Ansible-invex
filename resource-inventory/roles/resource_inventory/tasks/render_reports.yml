@@ -6,12 +6,12 @@
       - (report_dir | string | length) > 0
     fail_msg: "La variable 'report_dir' no esta definida. Definela en el play de control antes de renderizar."
 
-- name: Crear directorio del reporte en inv-ts-ansible (si no existe)
+- name: Crear directorio del reporte en invd-ts-ansible (si no existe)
   ansible.builtin.file:
     path: "{{ report_dir }}"
     state: directory
     mode: "0755"
-  delegate_to: inv-ts-ansible
+  delegate_to: invd-ts-ansible
   run_once: true
 
 - name: Asegurar variables (evitar undefined)
@@ -25,7 +25,7 @@
     src: linux_resources.csv.j2
     dest: "{{ report_dir }}/linux_resource_inventory.csv"
     mode: "0644"
-  delegate_to: inv-ts-ansible
+  delegate_to: invd-ts-ansible
   run_once: true
 
 - name: Reporte HTML (Linux resources)
@@ -33,7 +33,7 @@
     src: linux_resources.html.j2
     dest: "{{ report_dir }}/linux_resource_inventory.html"
     mode: "0644"
-  delegate_to: inv-ts-ansible
+  delegate_to: invd-ts-ansible
   run_once: true
 
 - name: Reporte CSV (Windows resources)
@@ -41,7 +41,7 @@
     src: windows_resources.csv.j2
     dest: "{{ report_dir }}/windows_resource_inventory.csv"
     mode: "0644"
-  delegate_to: inv-ts-ansible
+  delegate_to: invd-ts-ansible
   run_once: true
 
 - name: Reporte HTML (Windows resources)
@@ -49,7 +49,7 @@
     src: windows_resources.html.j2
     dest: "{{ report_dir }}/windows_resource_inventory.html"
     mode: "0644"
-  delegate_to: inv-ts-ansible
+  delegate_to: invd-ts-ansible
   run_once: true
 
 - name: Mostrar rutas de salida
