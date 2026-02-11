@@ -38,13 +38,33 @@
       }}
   run_once: true
 
-# (Opcional) Si audit_linux/audit_windows no existen, inicializamos para no romper templates.
-- name: Asegurar variables audit_* (evitar undefined) y congelar listas originales
+# ==========================================================
+# ✅ Opción 1: Reconstruir inventarios desde hostvars
+#    (evita que audit_linux/audit_windows lleguen como strings)
+# ==========================================================
+- name: Construir audit_*_all desde hostvars (fuente de verdad)
   ansible.builtin.set_fact:
-    audit_linux: "{{ audit_linux | default([]) }}"
-    audit_windows: "{{ audit_windows | default([]) }}"
-    audit_linux_all: "{{ audit_linux | default([]) }}"
-    audit_windows_all: "{{ audit_windows | default([]) }}"
+    audit_linux_all: >-
+      {{
+        (groups['LINUX'] | default([]))
+        | map('extract', hostvars, 'audit_linux_hostres')
+        | select('defined')
+        | list
+      }}
+    audit_windows_all: >-
+      {{
+        (groups['WINDOWS'] | default([]))
+        | map('extract', hostvars, 'audit_windows_hostres')
+        | select('defined')
+        | list
+      }}
+  run_once: true
+
+# (Opcional) si quieres mantener audit_linux/audit_windows disponibles para otras cosas
+- name: Asegurar variables audit_* (compatibilidad)
+  ansible.builtin.set_fact:
+    audit_linux: "{{ audit_linux_all | default([]) }}"
+    audit_windows: "{{ audit_windows_all | default([]) }}"
   run_once: true
 
 # ==========================================================
@@ -75,6 +95,8 @@
     mode: "0644"
   delegate_to: invd-ts-ansible
   vars:
+    audit_linux: "{{ audit_linux_all }}"
+    audit_windows: []
     audit_linux_single: "{{ omit }}"
     audit_windows_single: "{{ omit }}"
   when: report_generation_mode_safe in ['consolidated', 'both']
@@ -87,6 +109,8 @@
     mode: "0644"
   delegate_to: invd-ts-ansible
   vars:
+    audit_linux: "{{ audit_linux_all }}"
+    audit_windows: []
     audit_linux_single: "{{ omit }}"
     audit_windows_single: "{{ omit }}"
   when: report_generation_mode_safe in ['consolidated', 'both']
@@ -99,6 +123,8 @@
     mode: "0644"
   delegate_to: invd-ts-ansible
   vars:
+    audit_linux: []
+    audit_windows: "{{ audit_windows_all }}"
     audit_linux_single: "{{ omit }}"
     audit_windows_single: "{{ omit }}"
   when: report_generation_mode_safe in ['consolidated', 'both']
@@ -111,6 +137,8 @@
     mode: "0644"
   delegate_to: invd-ts-ansible
   vars:
+    audit_linux: []
+    audit_windows: "{{ audit_windows_all }}"
     audit_linux_single: "{{ omit }}"
     audit_windows_single: "{{ omit }}"
   when: report_generation_mode_safe in ['consolidated', 'both']
