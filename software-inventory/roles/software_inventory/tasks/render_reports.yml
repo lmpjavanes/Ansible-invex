@@ -12,14 +12,13 @@
     report_generation_mode_safe: "{{ report_generation_mode | default('consolidated') | lower }}"
   run_once: true
 
-- name: Validar report_generation_mode
+- name: Validar report_generation_mode (solo soportamos consolidated en opcion 1)
   ansible.builtin.assert:
     that:
-      - report_generation_mode_safe in ['consolidated', 'per_host', 'both']
+      - report_generation_mode_safe == 'consolidated'
     fail_msg: >-
-      "Valor invalido para report_generation_mode='{{ report_generation_mode_safe }}'.
-      Valores validos: consolidated | per_host | both"
-  run_once: true
+      "Este render_reports.yml es solo para Opcion 1 (consolidated).
+      Valor recibido: '{{ report_generation_mode_safe }}'"
 
 - name: Crear directorio base del reporte en invd-ts-ansible (si no existe)
   ansible.builtin.file:
@@ -39,280 +38,88 @@
       }}
   run_once: true
 
-# ==========================================================
-# Construir audit_*_all desde hostvars[].software_inventory_result
-# (incluye unavailable si no existe software_inventory_result)
-# ==========================================================
-- name: Inicializar audit_linux_all y audit_windows_all
+# =========================
+# Congelar listas consolidadas
+# (aqui es donde tu proyecto ya construye audit_linux_all / audit_windows_all)
+# =========================
+- name: Inicializar audit_linux_all y audit_windows_all (si no existen)
   ansible.builtin.set_fact:
-    audit_linux_all: []
-    audit_windows_all: []
+    audit_linux_all: "{{ audit_linux_all | default(audit_linux | default([])) }}"
+    audit_windows_all: "{{ audit_windows_all | default(audit_windows | default([])) }}"
   run_once: true
 
-- name: Construir audit_linux_all desde hostvars (incluye unavailable)
-  ansible.builtin.set_fact:
-    audit_linux_all: "{{ audit_linux_all + [ host_result ] }}"
-  vars:
-    host_result: >-
-      {{
-        hostvars[item].software_inventory_result
-        | default({
-            'host': item,
-            'os_family': 'Linux',
-            'checked_at': ansible_date_time.iso8601,
-            'status': 'unavailable',
-            'message': 'Servidor no disponible',
-            'total_packages': 0,
-            'packages': []
-          })
-      }}
-  loop: "{{ groups['LINUX'] | default([]) }}"
-  run_once: true
-
-- name: Construir audit_windows_all desde hostvars (incluye unavailable)
-  ansible.builtin.set_fact:
-    audit_windows_all: "{{ audit_windows_all + [ host_result ] }}"
-  vars:
-    host_result: >-
-      {{
-        hostvars[item].software_inventory_result
-        | default({
-            'host': item,
-            'os_family': 'Windows',
-            'checked_at': ansible_date_time.iso8601,
-            'status': 'unavailable',
-            'message': 'Servidor no disponible',
-            'total_packages': 0,
-            'packages': []
-          })
-      }}
-  loop: "{{ groups['WINDOWS'] | default([]) }}"
-  run_once: true
-
-# ==========================================================
-# ✅ DEBUG + NORMALIZACION (para detectar strings antes del template)
-# ==========================================================
-- name: DEBUG tipos audit_linux_all / audit_windows_all antes de render
+# =========================
+# DEBUG (para ver exactamente que se va a renderizar)
+# =========================
+- name: DEBUG tipos y ejemplo (audit_linux_all / audit_windows_all)
   ansible.builtin.debug:
     msg:
       - "audit_linux_all type={{ audit_linux_all | type_debug }}"
-      - "audit_linux_all len={{ audit_linux_all | length if (audit_linux_all is not string) else 'STRING' }}"
-      - "audit_linux_all first type={{ (audit_linux_all | first) | type_debug if (audit_linux_all is not string and (audit_linux_all | length > 0)) else 'N/A' }}"
-      - "audit_linux_all first={{ (audit_linux_all | first) if (audit_linux_all is not string and (audit_linux_all | length > 0)) else 'N/A' }}"
+      - "audit_linux_all len={{ audit_linux_all | length }}"
+      - "audit_linux_all first type={{ (audit_linux_all | first) | type_debug if (audit_linux_all | length) > 0 else 'N/A' }}"
+      - "audit_linux_all first keys={{ (audit_linux_all | first).keys() | list if (audit_linux_all | length) > 0 and ((audit_linux_all | first) is mapping) else 'N/A' }}"
       - "audit_windows_all type={{ audit_windows_all | type_debug }}"
-      - "audit_windows_all len={{ audit_windows_all | length if (audit_windows_all is not string) else 'STRING' }}"
-      - "audit_windows_all first type={{ (audit_windows_all | first) | type_debug if (audit_windows_all is not string and (audit_windows_all | length > 0)) else 'N/A' }}"
-      - "audit_windows_all first={{ (audit_windows_all | first) if (audit_windows_all is not string and (audit_windows_all | length > 0)) else 'N/A' }}"
+      - "audit_windows_all len={{ audit_windows_all | length }}"
+      - "audit_windows_all first type={{ (audit_windows_all | first) | type_debug if (audit_windows_all | length) > 0 else 'N/A' }}"
+      - "audit_windows_all first keys={{ (audit_windows_all | first).keys() | list if (audit_windows_all | length) > 0 and ((audit_windows_all | first) is mapping) else 'N/A' }}"
   run_once: true
 
-- name: Normalizar audit_*_all a lista de dicts con host (safe)
-  ansible.builtin.set_fact:
-    audit_linux_all_safe: >-
-      {{
-        audit_linux_all
-        if (
-          (audit_linux_all is sequence) and (audit_linux_all is not string)
-          and (
-            (audit_linux_all | length == 0)
-            or (
-              (audit_linux_all | first) is mapping
-              and (audit_linux_all | first).host is defined
-            )
-          )
-        )
-        else []
-      }}
-    audit_windows_all_safe: >-
-      {{
-        audit_windows_all
-        if (
-          (audit_windows_all is sequence) and (audit_windows_all is not string)
-          and (
-            (audit_windows_all | length == 0)
-            or (
-              (audit_windows_all | first) is mapping
-              and (audit_windows_all | first).host is defined
-            )
-          )
-        )
-        else []
-      }}
-  run_once: true
-
-- name: ASSERT audit_*_all_safe consistente con los grupos
+# (Opcional) Asegurar que lo que viene sea lista de diccionarios con 'host'
+- name: ASSERT audit_linux_all es lista de dict con host
   ansible.builtin.assert:
     that:
-      - (groups['LINUX'] | default([]) | length == 0) or (audit_linux_all_safe | length > 0)
-      - (groups['WINDOWS'] | default([]) | length == 0) or (audit_windows_all_safe | length > 0)
-    fail_msg: >-
-      audit_linux_all o audit_windows_all vienen corruptos (string/lista de strings) y se normalizaron a [].
-      Revisa si existen variables extra_vars o set_fact que esten sobrescribiendo audit_*_all.
+      - audit_linux_all is sequence
+      - (audit_linux_all | length) == 0 or ((audit_linux_all | first) is mapping and (audit_linux_all | first).host is defined)
+    fail_msg: "audit_linux_all no tiene la estructura esperada (lista de dicts con clave 'host')."
   run_once: true
 
-# ==========================================================
-# 1) Reportes CONSOLIDADOS
-# ==========================================================
-- name: Definir carpeta destino para reportes consolidados
-  ansible.builtin.set_fact:
-    consolidated_report_dir: >-
-      {{
-        (report_generation_mode_safe == 'both')
-        | ternary(report_dir ~ '/consolidated', report_dir)
-      }}
+- name: ASSERT audit_windows_all es lista de dict con host
+  ansible.builtin.assert:
+    that:
+      - audit_windows_all is sequence
+      - (audit_windows_all | length) == 0 or ((audit_windows_all | first) is mapping and (audit_windows_all | first).host is defined)
+    fail_msg: "audit_windows_all no tiene la estructura esperada (lista de dicts con clave 'host')."
   run_once: true
 
-- name: Crear carpeta de consolidados (solo mode=both)
-  ansible.builtin.file:
-    path: "{{ consolidated_report_dir }}"
-    state: directory
-    mode: "0755"
-  delegate_to: invd-ts-ansible
-  when: report_generation_mode_safe == 'both'
-  run_once: true
-
+# =========================
+# Reportes CONSOLIDADOS (tal como estaban)
+# =========================
 - name: Reporte CSV (Linux software) - Consolidado
   ansible.builtin.template:
     src: linux_software.csv.j2
-    dest: "{{ consolidated_report_dir }}/linux_software_inventory.csv"
+    dest: "{{ report_dir }}/linux_software_inventory.csv"
     mode: "0644"
   delegate_to: invd-ts-ansible
-  vars:
-    audit_linux_all: "{{ audit_linux_all_safe }}"
-    audit_windows_all: "{{ audit_windows_all_safe }}"
-    audit_linux_single: "{{ omit }}"
-    audit_windows_single: "{{ omit }}"
-  when: report_generation_mode_safe in ['consolidated', 'both']
   run_once: true
 
 - name: Reporte HTML (Linux software) - Consolidado
   ansible.builtin.template:
     src: linux_software.html.j2
-    dest: "{{ consolidated_report_dir }}/linux_software_inventory.html"
+    dest: "{{ report_dir }}/linux_software_inventory.html"
     mode: "0644"
   delegate_to: invd-ts-ansible
-  vars:
-    audit_linux_all: "{{ audit_linux_all_safe }}"
-    audit_windows_all: "{{ audit_windows_all_safe }}"
-    audit_linux_single: "{{ omit }}"
-    audit_windows_single: "{{ omit }}"
-  when: report_generation_mode_safe in ['consolidated', 'both']
   run_once: true
 
 - name: Reporte CSV (Windows software) - Consolidado
   ansible.builtin.template:
     src: windows_software.csv.j2
-    dest: "{{ consolidated_report_dir }}/windows_software_inventory.csv"
+    dest: "{{ report_dir }}/windows_software_inventory.csv"
     mode: "0644"
   delegate_to: invd-ts-ansible
-  vars:
-    audit_linux_all: "{{ audit_linux_all_safe }}"
-    audit_windows_all: "{{ audit_windows_all_safe }}"
-    audit_linux_single: "{{ omit }}"
-    audit_windows_single: "{{ omit }}"
-  when: report_generation_mode_safe in ['consolidated', 'both']
   run_once: true
 
 - name: Reporte HTML (Windows software) - Consolidado
   ansible.builtin.template:
     src: windows_software.html.j2
-    dest: "{{ consolidated_report_dir }}/windows_software_inventory.html"
+    dest: "{{ report_dir }}/windows_software_inventory.html"
     mode: "0644"
   delegate_to: invd-ts-ansible
-  vars:
-    audit_linux_all: "{{ audit_linux_all_safe }}"
-    audit_windows_all: "{{ audit_windows_all_safe }}"
-    audit_linux_single: "{{ omit }}"
-    audit_windows_single: "{{ omit }}"
-  when: report_generation_mode_safe in ['consolidated', 'both']
   run_once: true
 
-# ==========================================================
-# 2) Reportes POR HOST
-# ==========================================================
-- name: Definir carpeta destino para reportes por host
-  ansible.builtin.set_fact:
-    per_host_report_dir: >-
-      {{
-        (report_generation_mode_safe == 'both')
-        | ternary(report_dir ~ '/by_host', report_dir)
-      }}
-  run_once: true
-
-- name: Crear carpeta por_host (solo mode=both)
-  ansible.builtin.file:
-    path: "{{ per_host_report_dir }}"
-    state: directory
-    mode: "0755"
-  delegate_to: invd-ts-ansible
-  when: report_generation_mode_safe == 'both'
-  run_once: true
-
-# ---- Linux por host
-- name: Reportes por host (Linux) - CSV
-  ansible.builtin.template:
-    src: linux_software.csv.j2
-    dest: "{{ per_host_report_dir }}/{{ (item.host | default('unknown') | regex_replace('[^A-Za-z0-9_.-]', '_')) }}_linux_software_inventory.csv"
-    mode: "0644"
-  delegate_to: invd-ts-ansible
-  vars:
-    audit_linux_all: "{{ audit_linux_all_safe }}"
-    audit_windows_all: "{{ audit_windows_all_safe }}"
-    audit_linux_single: "{{ [ item ] }}"
-    audit_windows_single: []
-  loop: "{{ audit_linux_all_safe | default([]) }}"
-  when: report_generation_mode_safe in ['per_host', 'both']
-
-- name: Reportes por host (Linux) - HTML
-  ansible.builtin.template:
-    src: linux_software.html.j2
-    dest: "{{ per_host_report_dir }}/{{ (item.host | default('unknown') | regex_replace('[^A-Za-z0-9_.-]', '_')) }}_linux_software_inventory.html"
-    mode: "0644"
-  delegate_to: invd-ts-ansible
-  vars:
-    audit_linux_all: "{{ audit_linux_all_safe }}"
-    audit_windows_all: "{{ audit_windows_all_safe }}"
-    audit_linux_single: "{{ [ item ] }}"
-    audit_windows_single: []
-  loop: "{{ audit_linux_all_safe | default([]) }}"
-  when: report_generation_mode_safe in ['per_host', 'both']
-
-# ---- Windows por host
-- name: Reportes por host (Windows) - CSV
-  ansible.builtin.template:
-    src: windows_software.csv.j2
-    dest: "{{ per_host_report_dir }}/{{ (item.host | default('unknown') | regex_replace('[^A-Za-z0-9_.-]', '_')) }}_windows_software_inventory.csv"
-    mode: "0644"
-  delegate_to: invd-ts-ansible
-  vars:
-    audit_linux_all: "{{ audit_linux_all_safe }}"
-    audit_windows_all: "{{ audit_windows_all_safe }}"
-    audit_linux_single: []
-    audit_windows_single: "{{ [ item ] }}"
-  loop: "{{ audit_windows_all_safe | default([]) }}"
-  when: report_generation_mode_safe in ['per_host', 'both']
-
-- name: Reportes por host (Windows) - HTML
-  ansible.builtin.template:
-    src: windows_software.html.j2
-    dest: "{{ per_host_report_dir }}/{{ (item.host | default('unknown') | regex_replace('[^A-Za-z0-9_.-]', '_')) }}_windows_software_inventory.html"
-    mode: "0644"
-  delegate_to: invd-ts-ansible
-  vars:
-    audit_linux_all: "{{ audit_linux_all_safe }}"
-    audit_windows_all: "{{ audit_windows_all_safe }}"
-    audit_linux_single: []
-    audit_windows_single: "{{ [ item ] }}"
-  loop: "{{ audit_windows_all_safe | default([]) }}"
-  when: report_generation_mode_safe in ['per_host', 'both']
-
-# =========================
-# Mostrar rutas de salida
-# =========================
 - name: Mostrar rutas de salida
   ansible.builtin.debug:
     msg:
       - "Modo: {{ report_generation_mode_safe }}"
       - "Directorio base: {{ report_dir }}"
-      - "Consolidados: {{ (report_generation_mode_safe in ['consolidated','both']) | ternary(consolidated_report_dir, 'N/A') }}"
-      - "Por host: {{ (report_generation_mode_safe in ['per_host','both']) | ternary(per_host_report_dir, 'N/A') }}"
+      - "Consolidados: {{ report_dir }}"
   run_once: true
