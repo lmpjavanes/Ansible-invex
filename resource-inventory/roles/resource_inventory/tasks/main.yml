@@ -75,6 +75,42 @@
   failed_when: false
   when: os_family_safe != 'Windows'
 
+- name: Linux | Ejecutar detección de servicios por ps (extensible)
+  ansible.builtin.shell: "{{ item.cmd }}"
+  args:
+    executable: /bin/bash
+  register: linux_ps_checks
+  loop: "{{ cfg_linux.ps_service_checks | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+  changed_when: false
+  failed_when: false
+  when: os_family_safe != 'Windows'
+
+- name: Linux | Construir lista de servicios detectados
+  ansible.builtin.set_fact:
+    linux_ps_hits: >-
+      {%- set hits = [] -%}
+      {%- for r in (linux_ps_checks.results | default([])) -%}
+        {%- set out = (r.stdout | default('') | string | trim) -%}
+        {%- if out != '' -%}
+          {%- set _ = hits.append({'service': r.item.name, 'result': out}) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ hits }}
+  when: os_family_safe != 'Windows'
+
+- name: Linux | Normalizar columnas para reportes (Servicio / Resultado ps)
+  ansible.builtin.set_fact:
+    linux_service_ps: "{{ (linux_ps_hits | default([]) | map(attribute='service') | list) | join(' | ') }}"
+    linux_result_ps: >-
+      {{
+        (linux_ps_hits | default([]) | map(attribute='result') | list)
+        | map('regex_replace', '[\r\n]+', ' ')
+        | join(' || ')
+      }}
+  when: os_family_safe != 'Windows'
+
 - name: Linux | Normalizar hipervisor a nombres comunes
   ansible.builtin.set_fact:
     linux_hypervisor_fine: >-
@@ -119,6 +155,8 @@
       ip_assigned: "{{ ansible_facts.default_ipv4.address | default('') }}"
       mac_assigned: "{{ ansible_facts.default_ipv4.macaddress | default('') }}"
       vlan_assigned: "{{ (linux_vlan.stdout | default('') | string | trim) }}"
+      service_ps: "{{ linux_service_ps | default('') }}"
+      result_ps: "{{ linux_result_ps | default('') }}"
   when: os_family_safe != 'Windows'
 
 # =========================

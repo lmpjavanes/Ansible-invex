@@ -35,6 +35,8 @@
       <th>IP</th>
       <th>MAC</th>
       <th>VLAN</th>
+      <th>Servicio</th>
+      <th>Resultado ps</th>
       <th>Checked at</th>
       <th>Status</th>
       <th>Mensaje</th>
@@ -61,6 +63,8 @@
       <td>{{ r.ip_assigned | default('') }}</td>
       <td>{{ r.mac_assigned | default('') }}</td>
       <td>{{ r.vlan_assigned | default('') }}</td>
+      <td>{{ r.service_ps | default('') }}</td>
+      <td><pre style="white-space: pre-wrap; margin:0">{{ r.result_ps | default('') }}</pre></td>
       <td>{{ r.checked_at | default('') }}</td>
       <td>{{ r.status | default('') }}</td>
       <td class="{{ 'bad' if (r.status | default('')) == 'unavailable' else '' }}">{{ r.message | default('') }}</td>

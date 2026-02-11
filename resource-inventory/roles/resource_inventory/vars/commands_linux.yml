@@ -58,3 +58,18 @@ install_date_cmd: |
   else
     stat -c '%y' / 2>/dev/null | cut -d'.' -f1 || echo ""
   fi
+
+# =========================
+# Detección de servicios por "ps" (extensible)
+# =========================
+# Agrega nuevos elementos a esta lista para detectar más procesos/servicios.
+# Nota: se normaliza la salida para reportes; evita comandos interactivos.
+ps_service_checks:
+  - name: "Jboss"
+    cmd: "ps -ef | grep -i jboss | grep -v grep"
+  - name: "Java (sin Jboss)"
+    cmd: "ps -ef | grep -i java | grep -v jboss | grep -v grep"
+  - name: "Docker"
+    cmd: "ps -ef | grep -i dockerd | grep -v grep"
+  - name: "Base de Datos"
+    cmd: "ps -ef | egrep -i 'pmon|postgres -D' | grep -v grep"
