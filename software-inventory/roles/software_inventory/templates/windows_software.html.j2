@@ -42,9 +42,9 @@
           {% for pkg in hostres.packages | default([]) %}
           <tr>
             <td>{{ pkg.DisplayName | default('') }}</td>
-            <td>{{ pkg.DisplayVersion | default('') }}</td>
-            <td>{{ pkg.Publisher | default('') }}</td>
-            <td>{{ pkg.InstallDate | default('') }}</td>
+            <td>{{ pkg.DisplayVersion | default('N/A') }}</td>
+            <td>{{ pkg.Publisher | default('N/A') }}</td>
+            <td>{{ pkg.InstallDate | default('N/A') }}</td>
           </tr>
           {% endfor %}
         </tbody>

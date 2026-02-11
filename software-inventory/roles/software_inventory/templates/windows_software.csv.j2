@@ -5,7 +5,7 @@ DisplayName,DisplayVersion,Publisher,InstallDate,Host,CheckedAt,Status,Message
 ,,,,{{ hostres.host | default('') }},{{ hostres.checked_at | default('') }},{{ hostres.status | default('unavailable') }},{{ hostres.message | default('') }}
 {% else -%}
 {% for pkg in hostres.packages | default([]) -%}
-{{ pkg.DisplayName | default('') }},{{ pkg.DisplayVersion | default('') }},{{ pkg.Publisher | default('') }},{{ pkg.InstallDate | default('') }},{{ hostres.host | default('') }},{{ hostres.checked_at | default('') }},ok,
+{{ pkg.DisplayName | default('') }},{{ pkg.DisplayVersion | default('N/A') }},{{ pkg.Publisher | default('N/A') }},{{ pkg.InstallDate | default('N/A') }},{{ hostres.host | default('N/A') }},{{ hostres.checked_at | default('N/A') }},ok,
 {% endfor -%}
 {% endif -%}
 {% endfor -%}
