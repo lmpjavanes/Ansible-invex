@@ -76,7 +76,7 @@
     mode: "0644"
   delegate_to: invd-ts-ansible
   vars:
-    audit_linux: ["{{ item }}"]
+    audit_linux: "{{ [item] }}"
   loop: "{{ audit_linux | default([]) }}"
   run_once: true
   when: report_output_mode in ['per_host', 'both']
@@ -88,7 +88,7 @@
     mode: "0644"
   delegate_to: invd-ts-ansible
   vars:
-    audit_linux: ["{{ item }}"]
+    audit_linux: "{{ [item] }}"
   loop: "{{ audit_linux | default([]) }}"
   run_once: true
   when: report_output_mode in ['per_host', 'both']
@@ -100,7 +100,7 @@
     mode: "0644"
   delegate_to: invd-ts-ansible
   vars:
-    audit_windows: ["{{ item }}"]
+    audit_windows: "{{ [item] }}"
   loop: "{{ audit_windows | default([]) }}"
   run_once: true
   when: report_output_mode in ['per_host', 'both']
@@ -112,7 +112,7 @@
     mode: "0644"
   delegate_to: invd-ts-ansible
   vars:
-    audit_windows: ["{{ item }}"]
+    audit_windows: "{{ [item] }}"
   loop: "{{ audit_windows | default([]) }}"
   run_once: true
   when: report_output_mode in ['per_host', 'both']
