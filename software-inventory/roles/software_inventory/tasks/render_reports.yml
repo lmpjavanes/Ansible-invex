@@ -116,6 +116,27 @@
   when: report_generation_mode_safe in ['consolidated', 'both']
   run_once: true
 
+- name: DEBUG tipos audit_linux_all / audit_linux
+  ansible.builtin.debug:
+    msg:
+      - "audit_linux_all type={{ audit_linux_all | type_debug }}"
+      - "audit_linux_all len={{ audit_linux_all | length }}"
+      - "audit_linux_all first type={{ (audit_linux_all | first) | type_debug if (audit_linux_all | length > 0) else 'N/A' }}"
+      - "audit_linux type={{ audit_linux | default([]) | type_debug }}"
+      - "audit_linux first type={{ (audit_linux | first) | type_debug if (audit_linux | default([]) | length > 0) else 'N/A' }}"
+  run_once: true
+
+- name: ASSERT audit_linux_all es lista de dicts con 'host'
+  ansible.builtin.assert:
+    that:
+      - audit_linux_all is iterable
+      - (audit_linux_all | length == 0) or ((audit_linux_all | first) is mapping)
+      - (audit_linux_all | length == 0) or ((audit_linux_all | first).host is defined)
+    fail_msg: >-
+      audit_linux_all no tiene el formato esperado.
+      Debe ser lista de dicts tipo: [{host:..., status:..., packages:[...]}]
+  run_once: true
+
 - name: Reporte CSV (Windows software) - Consolidado
   ansible.builtin.template:
     src: windows_software.csv.j2

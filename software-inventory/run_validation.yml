@@ -96,5 +96,4 @@
       vars:
         # Pasamos el modo resuelto al rol para evitar auto-referencia/recursion
         report_generation_mode: "{{ report_generation_mode_effective }}"
-      vars:
         report_generation_mode_effective: "{{ report_generation_mode_effective }}"
