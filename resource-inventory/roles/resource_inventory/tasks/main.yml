@@ -1,13 +1,13 @@
 ---
-- name: Definir os_family seguro
+- name: Definir os_family seguro (aunque fallen facts)
   ansible.builtin.set_fact:
     os_family_safe: "{{ ansible_os_family | default('unknown') }}"
 
-- name: Detectar host
+- name: Detectar host sin facts (unavailable)
   ansible.builtin.set_fact:
     host_unavailable: "{{ os_family_safe == 'unknown' }}"
 
-- name: Marcar resultado como servidor no disponible
+- name: Marcar resultado como servidor no disponible (asset vacío)
   ansible.builtin.set_fact:
     resource_inventory_asset:
       host: "{{ inventory_hostname }}"
@@ -22,15 +22,15 @@
   when: host_unavailable
 
 # =========================
-# Linux
+# Linux (detección más fina)
 # =========================
-- name: Linux | Cargar catalogo vars
+- name: Linux | Cargar catálogo vars
   ansible.builtin.include_vars:
     file: "{{ role_path }}/vars/commands_linux.yml"
     name: cfg_linux
   when: os_family_safe != 'Windows'
 
-- name: Linux | Detectar hipervisor
+- name: Linux | Detectar hipervisor (fino) con systemd-detect-virt (si existe)
   ansible.builtin.shell: "{{ cfg_linux.hypervisor_detect_cmd }}"
   args:
     executable: /bin/bash
@@ -39,7 +39,7 @@
   failed_when: false
   when: os_family_safe != 'Windows'
 
-- name: Linux | Obtener disk bytes
+- name: Linux | Obtener disk bytes (best effort)
   ansible.builtin.shell: "{{ cfg_linux.disk_total_bytes_cmd }}"
   args:
     executable: /bin/bash
@@ -48,7 +48,7 @@
   failed_when: false
   when: os_family_safe != 'Windows'
 
-- name: Linux | Obtener velocidad de red
+- name: Linux | Obtener velocidad de red (best effort)
   ansible.builtin.shell: "{{ cfg_linux.nic_speed_cmd }}"
   args:
     executable: /bin/bash
@@ -57,7 +57,7 @@
   failed_when: false
   when: os_family_safe != 'Windows'
 
-- name: Linux | Obtener VLAN
+- name: Linux | Obtener VLAN (detección más fina)
   ansible.builtin.shell: "{{ cfg_linux.vlan_id_cmd }}"
   args:
     executable: /bin/bash
@@ -66,7 +66,7 @@
   failed_when: false
   when: os_family_safe != 'Windows'
 
-- name: Linux | Obtener fecha de instalacion
+- name: Linux | Obtener fecha de instalación (best effort)
   ansible.builtin.shell: "{{ cfg_linux.install_date_cmd }}"
   args:
     executable: /bin/bash
@@ -122,27 +122,37 @@
   when: os_family_safe != 'Windows'
 
 # =========================
-# Windows
+# Windows (detección más fina)
 # =========================
-- name: Windows | Obtener inventario
+- name: Windows | Obtener inventario (JSON)
   ansible.windows.win_powershell:
     script: |
       $ErrorActionPreference = "SilentlyContinue"
+
       $cs   = Get-CimInstance Win32_ComputerSystem
       $bios = Get-CimInstance Win32_BIOS
       $os   = Get-CimInstance Win32_OperatingSystem
       $cpu  = Get-CimInstance Win32_Processor
 
+      # Disco total
       $disks = Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3"
       $diskSize = 0
       foreach ($d in $disks) { $diskSize += [int64]$d.Size }
 
+      # NIC por default route
       $route = Get-NetRoute -DestinationPrefix "0.0.0.0/0" | Sort-Object RouteMetric | Select-Object -First 1
       $nic = $null
-      if ($route) { $nic = Get-NetAdapter -InterfaceIndex $route.IfIndex -ErrorAction SilentlyContinue }
-      if (-not $nic) { $nic = Get-NetAdapter | Where-Object {$_.Status -eq "Up"} | Sort-Object InterfaceMetric | Select-Object -First 1 }
+      if ($route) {
+        $nic = Get-NetAdapter -InterfaceIndex $route.IfIndex -ErrorAction SilentlyContinue
+      }
+      if (-not $nic) {
+        $nic = Get-NetAdapter | Where-Object {$_.Status -eq "Up"} | Sort-Object InterfaceMetric | Select-Object -First 1
+      }
 
-      $ip = ""; $mac = ""; $link = ""; $vlan = ""
+      $ip = ""
+      $mac = ""
+      $link = ""
+      $vlan = ""
       if ($nic) {
         $mac = $nic.MacAddress
         $link = $nic.LinkSpeed
@@ -151,6 +161,7 @@
                 Where-Object {$_.IPAddress -notlike "169.254*"} | Select-Object -First 1
         if ($ipObj) { $ip = $ipObj.IPAddress }
 
+        # VLAN: NetAdapterVlan -> AdvancedProperty
         try {
           $v = Get-NetAdapterVlan -InterfaceAlias $nic.Name -ErrorAction Stop
           if ($v -and $v.VlanID -ne $null) { $vlan = [string]$v.VlanID }
@@ -165,8 +176,11 @@
         }
       }
 
+      # Hipervisor fino
       $m = ($cs.Manufacturer + " " + $cs.Model)
-      $hypervisor = ""; $isVirtual = $false
+      $hypervisor = ""
+      $isVirtual = $false
+
       if ($m -match "VMware") { $isVirtual = $true; $hypervisor = "VMware" }
       elseif ($m -match "Hyper-V|Virtual Machine" -and $cs.Manufacturer -match "Microsoft") { $isVirtual = $true; $hypervisor = "Hyper-V" }
       elseif ($m -match "KVM|QEMU") { $isVirtual = $true; $hypervisor = "KVM/QEMU" }
@@ -204,27 +218,9 @@
   failed_when: false
   when: os_family_safe == 'Windows'
 
-- name: Windows | Normalizar salida JSON a string (WinRM puede devolver lista)
-  ansible.builtin.set_fact:
-    win_asset_json_str: >-
-      {% set o = win_asset_json.output | default([]) %}
-      {% if o is string %}
-      {{ o | trim }}
-      {% else %}
-      {{ (o | join('') | trim) }}
-      {% endif %}
-  when: os_family_safe == 'Windows'
-
-- name: Windows | Extraer solo el JSON (robusto)
-  ansible.builtin.set_fact:
-    win_asset_json_only: >-
-      {% set matches = (win_asset_json_str | regex_findall('({.*})')) %}
-      {{ (matches | length > 0) | ternary((matches | last), '{}') }}
-  when: os_family_safe == 'Windows'
-
 - name: Windows | Parsear JSON
   ansible.builtin.set_fact:
-    win_asset: "{{ win_asset_json_only | from_json }}"
+    win_asset: "{{ (win_asset_json.output | default('{}')) | from_json }}"
   when: os_family_safe == 'Windows'
 
 - name: Windows | Construir asset inventory final

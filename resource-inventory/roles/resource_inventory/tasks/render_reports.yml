@@ -11,15 +11,40 @@
   ansible.builtin.assert:
     that:
       - report_output_mode in ['consolidated', 'per_host', 'both']
-    fail_msg: "Valor invalido en report_output_mode. Valores permitidos: consolidated, per_host, both."
+    fail_msg: "Valor inválido en report_output_mode. Valores permitidos: consolidated, per_host, both."
 
-- name: Crear directorio del reporte en invd-ts-ansible (si no existe)
+# En modo 'both' creamos subcarpetas dentro del timestamp para mantener orden
+- name: Definir subcarpetas de salida
+  ansible.builtin.set_fact:
+    consolidated_dir: "{{ report_dir if report_output_mode != 'both' else (report_dir ~ '/consolidated') }}"
+    per_host_dir: "{{ report_dir if report_output_mode != 'both' else (report_dir ~ '/per_host') }}"
+  run_once: true
+
+- name: Crear directorio base del reporte en inv-ts-ansible (si no existe)
   ansible.builtin.file:
     path: "{{ report_dir }}"
     state: directory
     mode: "0755"
-  delegate_to: invd-ts-ansible
+  delegate_to: inv-ts-ansible
   run_once: true
+
+- name: Crear subcarpeta consolidated (solo modo both)
+  ansible.builtin.file:
+    path: "{{ consolidated_dir }}"
+    state: directory
+    mode: "0755"
+  delegate_to: inv-ts-ansible
+  run_once: true
+  when: report_output_mode == 'both'
+
+- name: Crear subcarpeta per_host (solo modo both)
+  ansible.builtin.file:
+    path: "{{ per_host_dir }}"
+    state: directory
+    mode: "0755"
+  delegate_to: inv-ts-ansible
+  run_once: true
+  when: report_output_mode == 'both'
 
 - name: Asegurar variables audit_* (evitar undefined)
   ansible.builtin.set_fact:
@@ -33,36 +58,36 @@
 - name: Consolidado | Reporte CSV (Linux)
   ansible.builtin.template:
     src: linux_resources.csv.j2
-    dest: "{{ report_dir }}/linux_resource_inventory.csv"
+    dest: "{{ consolidated_dir }}/linux_resource_inventory.csv"
     mode: "0644"
-  delegate_to: invd-ts-ansible
+  delegate_to: inv-ts-ansible
   run_once: true
   when: report_output_mode in ['consolidated', 'both']
 
 - name: Consolidado | Reporte HTML (Linux)
   ansible.builtin.template:
     src: linux_resources.html.j2
-    dest: "{{ report_dir }}/linux_resource_inventory.html"
+    dest: "{{ consolidated_dir }}/linux_resource_inventory.html"
     mode: "0644"
-  delegate_to: invd-ts-ansible
+  delegate_to: inv-ts-ansible
   run_once: true
   when: report_output_mode in ['consolidated', 'both']
 
 - name: Consolidado | Reporte CSV (Windows)
   ansible.builtin.template:
     src: windows_resources.csv.j2
-    dest: "{{ report_dir }}/windows_resource_inventory.csv"
+    dest: "{{ consolidated_dir }}/windows_resource_inventory.csv"
     mode: "0644"
-  delegate_to: invd-ts-ansible
+  delegate_to: inv-ts-ansible
   run_once: true
   when: report_output_mode in ['consolidated', 'both']
 
 - name: Consolidado | Reporte HTML (Windows)
   ansible.builtin.template:
     src: windows_resources.html.j2
-    dest: "{{ report_dir }}/windows_resource_inventory.html"
+    dest: "{{ consolidated_dir }}/windows_resource_inventory.html"
     mode: "0644"
-  delegate_to: invd-ts-ansible
+  delegate_to: inv-ts-ansible
   run_once: true
   when: report_output_mode in ['consolidated', 'both']
 
@@ -72,9 +97,9 @@
 - name: Por host | Linux CSV por host
   ansible.builtin.template:
     src: linux_resources.csv.j2
-    dest: "{{ report_dir }}/linux_{{ (item.server_name | default(item.host) | regex_replace('[^A-Za-z0-9._-]','_')) }}.csv"
+    dest: "{{ per_host_dir }}/linux_{{ (item.server_name | default(item.host) | regex_replace('[^A-Za-z0-9._-]','_')) }}.csv"
     mode: "0644"
-  delegate_to: invd-ts-ansible
+  delegate_to: inv-ts-ansible
   vars:
     audit_linux: "{{ [item] }}"
   loop: "{{ audit_linux | default([]) }}"
@@ -84,9 +109,9 @@
 - name: Por host | Linux HTML por host
   ansible.builtin.template:
     src: linux_resources.html.j2
-    dest: "{{ report_dir }}/linux_{{ (item.server_name | default(item.host) | regex_replace('[^A-Za-z0-9._-]','_')) }}.html"
+    dest: "{{ per_host_dir }}/linux_{{ (item.server_name | default(item.host) | regex_replace('[^A-Za-z0-9._-]','_')) }}.html"
     mode: "0644"
-  delegate_to: invd-ts-ansible
+  delegate_to: inv-ts-ansible
   vars:
     audit_linux: "{{ [item] }}"
   loop: "{{ audit_linux | default([]) }}"
@@ -96,9 +121,9 @@
 - name: Por host | Windows CSV por host
   ansible.builtin.template:
     src: windows_resources.csv.j2
-    dest: "{{ report_dir }}/windows_{{ (item.server_name | default(item.host) | regex_replace('[^A-Za-z0-9._-]','_')) }}.csv"
+    dest: "{{ per_host_dir }}/windows_{{ (item.server_name | default(item.host) | regex_replace('[^A-Za-z0-9._-]','_')) }}.csv"
     mode: "0644"
-  delegate_to: invd-ts-ansible
+  delegate_to: inv-ts-ansible
   vars:
     audit_windows: "{{ [item] }}"
   loop: "{{ audit_windows | default([]) }}"
@@ -108,9 +133,9 @@
 - name: Por host | Windows HTML por host
   ansible.builtin.template:
     src: windows_resources.html.j2
-    dest: "{{ report_dir }}/windows_{{ (item.server_name | default(item.host) | regex_replace('[^A-Za-z0-9._-]','_')) }}.html"
+    dest: "{{ per_host_dir }}/windows_{{ (item.server_name | default(item.host) | regex_replace('[^A-Za-z0-9._-]','_')) }}.html"
     mode: "0644"
-  delegate_to: invd-ts-ansible
+  delegate_to: inv-ts-ansible
   vars:
     audit_windows: "{{ [item] }}"
   loop: "{{ audit_windows | default([]) }}"
@@ -122,8 +147,8 @@
     msg:
       - "Reportes generados en: {{ report_dir }}"
       - "Modo de salida: {{ report_output_mode }}"
+      - "Consolidado dir: {{ consolidated_dir }}"
+      - "Per-host dir: {{ per_host_dir }}"
       - "Linux hosts: {{ (audit_linux | default([])) | length }}"
       - "Windows hosts: {{ (audit_windows | default([])) | length }}"
-      - "Consolidado: {{ 'SI' if report_output_mode in ['consolidated','both'] else 'NO' }}"
-      - "Por host: {{ 'SI' if report_output_mode in ['per_host','both'] else 'NO' }}"
   run_once: true
