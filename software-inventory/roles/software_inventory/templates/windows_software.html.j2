@@ -16,8 +16,31 @@
   <h1>Windows Software Inventory</h1>
   <p><b>Generated:</b> {{ ansible_date_time.iso8601 }}</p>
 
-  {# ✅ Si viene audit_windows_single (per_host), úsalo. Si no, usa audit_windows (consolidado) #}
-  {% set _audit_windows = audit_windows_single | default(audit_windows_all | default([])) %}
+  {#
+    Selección "a prueba de balas":
+    - Usar audit_windows_single SOLO si:
+      * está definida
+      * es una secuencia (lista)
+      * NO es string
+      * tiene al menos 1 elemento
+      * el primer elemento es dict (mapping)
+      * y tiene clave/atributo host
+    - Si no cumple, usar audit_windows_all (consolidado)
+  #}
+  {% set _audit_windows =
+    (
+      audit_windows_single
+      if (
+        audit_windows_single is defined
+        and (audit_windows_single is sequence)
+        and (audit_windows_single is not string)
+        and (audit_windows_single | length > 0)
+        and ((audit_windows_single | first) is mapping)
+        and ((audit_windows_single | first).host is defined)
+      )
+      else (audit_windows_all | default([]))
+    )
+  %}
 
   {% for hostres in _audit_windows %}
     <h2>Host: {{ hostres.host }}</h2>
