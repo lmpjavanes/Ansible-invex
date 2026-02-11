@@ -24,6 +24,8 @@
   vars:
     report_ts: "{{ ansible_date_time.iso8601_basic_short }}"
     report_dir: "/reportes_ansible/software_inventory/{{ report_ts }}"
+    # consolidated | per_host | both
+    report_generation_mode: "{{ report_generation_mode | default('consolidated') }}"
   tasks:
     - name: Crear directorio del reporte
       ansible.builtin.file:

@@ -6,7 +6,21 @@
       - (report_dir | string | length) > 0
     fail_msg: "La variable 'report_dir' no esta definida. Definela en el play de control antes de renderizar."
 
-- name: Crear directorio del reporte en invd-ts-ansible (si no existe)
+- name: Definir modo de generacion de reportes (default)
+  ansible.builtin.set_fact:
+    report_generation_mode: "{{ report_generation_mode | default('consolidated') }}"
+  run_once: true
+
+- name: Validar report_generation_mode
+  ansible.builtin.assert:
+    that:
+      - report_generation_mode in ['consolidated', 'per_host', 'both']
+    fail_msg: >-
+      "Valor invalido para report_generation_mode='{{ report_generation_mode }}'.
+      Valores validos: consolidated | per_host | both"
+  run_once: true
+
+- name: Crear directorio base del reporte en invd-ts-ansible (si no existe)
   ansible.builtin.file:
     path: "{{ report_dir }}"
     state: directory
@@ -31,50 +45,146 @@
     audit_windows: "{{ audit_windows | default([]) }}"
   run_once: true
 
-# =========================
-# Render Linux
-# =========================
-- name: Reporte CSV (Linux software)
+# ==========================================================
+# 1) Reportes CONSOLIDADOS (tal como estan hoy)
+#    - Si mode=consolidated -> se generan en report_dir (sin cambios)
+#    - Si mode=both         -> se generan en report_dir/consolidated
+# ==========================================================
+- name: Definir carpeta destino para reportes consolidados
+  ansible.builtin.set_fact:
+    consolidated_report_dir: >-
+      {{
+        (report_generation_mode == 'both')
+        | ternary(report_dir ~ '/consolidated', report_dir)
+      }}
+  run_once: true
+
+- name: Crear carpeta de consolidados (solo mode=both)
+  ansible.builtin.file:
+    path: "{{ consolidated_report_dir }}"
+    state: directory
+    mode: "0755"
+  delegate_to: invd-ts-ansible
+  when: report_generation_mode == 'both'
+  run_once: true
+
+- name: Reporte CSV (Linux software) - Consolidado
   ansible.builtin.template:
     src: linux_software.csv.j2
-    dest: "{{ report_dir }}/linux_software_inventory.csv"
+    dest: "{{ consolidated_report_dir }}/linux_software_inventory.csv"
     mode: "0644"
   delegate_to: invd-ts-ansible
+  when: report_generation_mode in ['consolidated', 'both']
   run_once: true
 
-- name: Reporte HTML (Linux software)
+- name: Reporte HTML (Linux software) - Consolidado
   ansible.builtin.template:
     src: linux_software.html.j2
-    dest: "{{ report_dir }}/linux_software_inventory.html"
+    dest: "{{ consolidated_report_dir }}/linux_software_inventory.html"
     mode: "0644"
   delegate_to: invd-ts-ansible
+  when: report_generation_mode in ['consolidated', 'both']
   run_once: true
 
-# =========================
-# Render Windows
-# =========================
-- name: Reporte CSV (Windows software)
+- name: Reporte CSV (Windows software) - Consolidado
   ansible.builtin.template:
     src: windows_software.csv.j2
-    dest: "{{ report_dir }}/windows_software_inventory.csv"
+    dest: "{{ consolidated_report_dir }}/windows_software_inventory.csv"
     mode: "0644"
   delegate_to: invd-ts-ansible
+  when: report_generation_mode in ['consolidated', 'both']
   run_once: true
 
-- name: Reporte HTML (Windows software)
+- name: Reporte HTML (Windows software) - Consolidado
   ansible.builtin.template:
     src: windows_software.html.j2
-    dest: "{{ report_dir }}/windows_software_inventory.html"
+    dest: "{{ consolidated_report_dir }}/windows_software_inventory.html"
     mode: "0644"
   delegate_to: invd-ts-ansible
+  when: report_generation_mode in ['consolidated', 'both']
   run_once: true
 
+# ==========================================================
+# 2) Reportes POR HOST
+#    - Si mode=per_host -> se generan en report_dir (archivos por host)
+#    - Si mode=both     -> se generan en report_dir/by_host
+# ==========================================================
+- name: Definir carpeta destino para reportes por host
+  ansible.builtin.set_fact:
+    per_host_report_dir: >-
+      {{
+        (report_generation_mode == 'both')
+        | ternary(report_dir ~ '/by_host', report_dir)
+      }}
+  run_once: true
+
+- name: Crear carpeta por_host (solo mode=both)
+  ansible.builtin.file:
+    path: "{{ per_host_report_dir }}"
+    state: directory
+    mode: "0755"
+  delegate_to: invd-ts-ansible
+  when: report_generation_mode == 'both'
+  run_once: true
+
+# ---- Linux por host
+- name: Reportes por host (Linux) - CSV
+  ansible.builtin.template:
+    src: linux_software.csv.j2
+    dest: "{{ per_host_report_dir }}/{{ (item.host | default('unknown') | regex_replace('[^A-Za-z0-9_.-]', '_')) }}_linux_software_inventory.csv"
+    mode: "0644"
+  delegate_to: invd-ts-ansible
+  vars:
+    audit_linux: "{{ [item] }}"
+    audit_windows: []
+  loop: "{{ audit_linux | default([]) }}"
+  when: report_generation_mode in ['per_host', 'both']
+
+- name: Reportes por host (Linux) - HTML
+  ansible.builtin.template:
+    src: linux_software.html.j2
+    dest: "{{ per_host_report_dir }}/{{ (item.host | default('unknown') | regex_replace('[^A-Za-z0-9_.-]', '_')) }}_linux_software_inventory.html"
+    mode: "0644"
+  delegate_to: invd-ts-ansible
+  vars:
+    audit_linux: "{{ [item] }}"
+    audit_windows: []
+  loop: "{{ audit_linux | default([]) }}"
+  when: report_generation_mode in ['per_host', 'both']
+
+# ---- Windows por host
+- name: Reportes por host (Windows) - CSV
+  ansible.builtin.template:
+    src: windows_software.csv.j2
+    dest: "{{ per_host_report_dir }}/{{ (item.host | default('unknown') | regex_replace('[^A-Za-z0-9_.-]', '_')) }}_windows_software_inventory.csv"
+    mode: "0644"
+  delegate_to: invd-ts-ansible
+  vars:
+    audit_linux: []
+    audit_windows: "{{ [item] }}"
+  loop: "{{ audit_windows | default([]) }}"
+  when: report_generation_mode in ['per_host', 'both']
+
+- name: Reportes por host (Windows) - HTML
+  ansible.builtin.template:
+    src: windows_software.html.j2
+    dest: "{{ per_host_report_dir }}/{{ (item.host | default('unknown') | regex_replace('[^A-Za-z0-9_.-]', '_')) }}_windows_software_inventory.html"
+    mode: "0644"
+  delegate_to: invd-ts-ansible
+  vars:
+    audit_linux: []
+    audit_windows: "{{ [item] }}"
+  loop: "{{ audit_windows | default([]) }}"
+  when: report_generation_mode in ['per_host', 'both']
+
+# =========================
+# Mostrar rutas de salida
+# =========================
 - name: Mostrar rutas de salida
   ansible.builtin.debug:
     msg:
-      - "Reportes generados en: {{ report_dir }}"
-      - "Linux CSV : {{ report_dir }}/linux_software_inventory.csv"
-      - "Linux HTML: {{ report_dir }}/linux_software_inventory.html"
-      - "Windows CSV : {{ report_dir }}/windows_software_inventory.csv"
-      - "Windows HTML: {{ report_dir }}/windows_software_inventory.html"
+      - "Modo: {{ report_generation_mode }}"
+      - "Directorio base: {{ report_dir }}"
+      - "Consolidados: {{ (report_generation_mode in ['consolidated','both']) | ternary(consolidated_report_dir, 'N/A') }}"
+      - "Por host: {{ (report_generation_mode in ['per_host','both']) | ternary(per_host_report_dir, 'N/A') }}"
   run_once: true
