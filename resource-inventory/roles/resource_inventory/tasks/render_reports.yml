@@ -20,12 +20,12 @@
     per_host_dir: "{{ report_dir if report_output_mode != 'both' else (report_dir ~ '/per_host') }}"
   run_once: true
 
-- name: Crear directorio base del reporte en inv-ts-ansible (si no existe)
+- name: Crear directorio base del reporte en invd-ts-ansible (si no existe)
   ansible.builtin.file:
     path: "{{ report_dir }}"
     state: directory
     mode: "0755"
-  delegate_to: inv-ts-ansible
+  delegate_to: invd-ts-ansible
   run_once: true
 
 - name: Crear subcarpeta consolidated (solo modo both)
@@ -33,7 +33,7 @@
     path: "{{ consolidated_dir }}"
     state: directory
     mode: "0755"
-  delegate_to: inv-ts-ansible
+  delegate_to: invd-ts-ansible
   run_once: true
   when: report_output_mode == 'both'
 
@@ -42,7 +42,7 @@
     path: "{{ per_host_dir }}"
     state: directory
     mode: "0755"
-  delegate_to: inv-ts-ansible
+  delegate_to: invd-ts-ansible
   run_once: true
   when: report_output_mode == 'both'
 
@@ -60,7 +60,7 @@
     src: linux_resources.csv.j2
     dest: "{{ consolidated_dir }}/linux_resource_inventory.csv"
     mode: "0644"
-  delegate_to: inv-ts-ansible
+  delegate_to: invd-ts-ansible
   run_once: true
   when: report_output_mode in ['consolidated', 'both']
 
@@ -69,7 +69,7 @@
     src: linux_resources.html.j2
     dest: "{{ consolidated_dir }}/linux_resource_inventory.html"
     mode: "0644"
-  delegate_to: inv-ts-ansible
+  delegate_to: invd-ts-ansible
   run_once: true
   when: report_output_mode in ['consolidated', 'both']
 
@@ -78,7 +78,7 @@
     src: windows_resources.csv.j2
     dest: "{{ consolidated_dir }}/windows_resource_inventory.csv"
     mode: "0644"
-  delegate_to: inv-ts-ansible
+  delegate_to: invd-ts-ansible
   run_once: true
   when: report_output_mode in ['consolidated', 'both']
 
@@ -87,7 +87,7 @@
     src: windows_resources.html.j2
     dest: "{{ consolidated_dir }}/windows_resource_inventory.html"
     mode: "0644"
-  delegate_to: inv-ts-ansible
+  delegate_to: invd-ts-ansible
   run_once: true
   when: report_output_mode in ['consolidated', 'both']
 
@@ -99,7 +99,7 @@
     src: linux_resources.csv.j2
     dest: "{{ per_host_dir }}/linux_{{ (item.server_name | default(item.host) | regex_replace('[^A-Za-z0-9._-]','_')) }}.csv"
     mode: "0644"
-  delegate_to: inv-ts-ansible
+  delegate_to: invd-ts-ansible
   vars:
     audit_linux: "{{ [item] }}"
   loop: "{{ audit_linux | default([]) }}"
@@ -111,7 +111,7 @@
     src: linux_resources.html.j2
     dest: "{{ per_host_dir }}/linux_{{ (item.server_name | default(item.host) | regex_replace('[^A-Za-z0-9._-]','_')) }}.html"
     mode: "0644"
-  delegate_to: inv-ts-ansible
+  delegate_to: invd-ts-ansible
   vars:
     audit_linux: "{{ [item] }}"
   loop: "{{ audit_linux | default([]) }}"
@@ -123,7 +123,7 @@
     src: windows_resources.csv.j2
     dest: "{{ per_host_dir }}/windows_{{ (item.server_name | default(item.host) | regex_replace('[^A-Za-z0-9._-]','_')) }}.csv"
     mode: "0644"
-  delegate_to: inv-ts-ansible
+  delegate_to: invd-ts-ansible
   vars:
     audit_windows: "{{ [item] }}"
   loop: "{{ audit_windows | default([]) }}"
@@ -135,7 +135,7 @@
     src: windows_resources.html.j2
     dest: "{{ per_host_dir }}/windows_{{ (item.server_name | default(item.host) | regex_replace('[^A-Za-z0-9._-]','_')) }}.html"
     mode: "0644"
-  delegate_to: inv-ts-ansible
+  delegate_to: invd-ts-ansible
   vars:
     audit_windows: "{{ [item] }}"
   loop: "{{ audit_windows | default([]) }}"
