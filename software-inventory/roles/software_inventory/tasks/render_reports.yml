@@ -29,7 +29,7 @@
   delegate_to: invd-ts-ansible
   run_once: true
 
-# Baseline linux names (para marcar paquetes válidos) desde el primer host linux (si existe)
+# Si baseline_linux_names no viene en el play de control, intentamos recuperarla desde el primer host Linux.
 - name: Asegurar baseline_linux_names (si no viene en el play de control)
   ansible.builtin.set_fact:
     baseline_linux_names: >-
@@ -40,7 +40,8 @@
   run_once: true
 
 # ==========================================================
-# ✅ FUENTE DE VERDAD: reconstruir desde hostvars[].software_inventory_result
+# Construir audit_*_all desde hostvars[].software_inventory_result
+# (incluye unavailable si no existe software_inventory_result)
 # ==========================================================
 - name: Inicializar audit_linux_all y audit_windows_all
   ansible.builtin.set_fact:
@@ -62,9 +63,7 @@
             'status': 'unavailable',
             'message': 'Servidor no disponible',
             'total_packages': 0,
-            'packages': [],
-            'total_services': 0,
-            'services': []
+            'packages': []
           })
       }}
   loop: "{{ groups['LINUX'] | default([]) }}"
@@ -84,22 +83,70 @@
             'status': 'unavailable',
             'message': 'Servidor no disponible',
             'total_packages': 0,
-            'packages': [],
-            'total_services': 0,
-            'services': []
+            'packages': []
           })
       }}
   loop: "{{ groups['WINDOWS'] | default([]) }}"
   run_once: true
 
-# Guardrail: asegurar que el primer elemento es dict con host (si hay elementos)
-- name: Validar estructura audit_linux_all/audit_windows_all
+# ==========================================================
+# ✅ DEBUG + NORMALIZACION (para detectar strings antes del template)
+# ==========================================================
+- name: DEBUG tipos audit_linux_all / audit_windows_all antes de render
+  ansible.builtin.debug:
+    msg:
+      - "audit_linux_all type={{ audit_linux_all | type_debug }}"
+      - "audit_linux_all len={{ audit_linux_all | length if (audit_linux_all is not string) else 'STRING' }}"
+      - "audit_linux_all first type={{ (audit_linux_all | first) | type_debug if (audit_linux_all is not string and (audit_linux_all | length > 0)) else 'N/A' }}"
+      - "audit_linux_all first={{ (audit_linux_all | first) if (audit_linux_all is not string and (audit_linux_all | length > 0)) else 'N/A' }}"
+      - "audit_windows_all type={{ audit_windows_all | type_debug }}"
+      - "audit_windows_all len={{ audit_windows_all | length if (audit_windows_all is not string) else 'STRING' }}"
+      - "audit_windows_all first type={{ (audit_windows_all | first) | type_debug if (audit_windows_all is not string and (audit_windows_all | length > 0)) else 'N/A' }}"
+      - "audit_windows_all first={{ (audit_windows_all | first) if (audit_windows_all is not string and (audit_windows_all | length > 0)) else 'N/A' }}"
+  run_once: true
+
+- name: Normalizar audit_*_all a lista de dicts con host (safe)
+  ansible.builtin.set_fact:
+    audit_linux_all_safe: >-
+      {{
+        audit_linux_all
+        if (
+          (audit_linux_all is sequence) and (audit_linux_all is not string)
+          and (
+            (audit_linux_all | length == 0)
+            or (
+              (audit_linux_all | first) is mapping
+              and (audit_linux_all | first).host is defined
+            )
+          )
+        )
+        else []
+      }}
+    audit_windows_all_safe: >-
+      {{
+        audit_windows_all
+        if (
+          (audit_windows_all is sequence) and (audit_windows_all is not string)
+          and (
+            (audit_windows_all | length == 0)
+            or (
+              (audit_windows_all | first) is mapping
+              and (audit_windows_all | first).host is defined
+            )
+          )
+        )
+        else []
+      }}
+  run_once: true
+
+- name: ASSERT audit_*_all_safe consistente con los grupos
   ansible.builtin.assert:
     that:
-      - (audit_linux_all | length == 0) or ((audit_linux_all | first) is mapping and (audit_linux_all | first).host is defined)
-      - (audit_windows_all | length == 0) or ((audit_windows_all | first) is mapping and (audit_windows_all | first).host is defined)
+      - (groups['LINUX'] | default([]) | length == 0) or (audit_linux_all_safe | length > 0)
+      - (groups['WINDOWS'] | default([]) | length == 0) or (audit_windows_all_safe | length > 0)
     fail_msg: >-
-      "audit_*_all no tiene el formato esperado (lista de dicts con 'host')."
+      audit_linux_all o audit_windows_all vienen corruptos (string/lista de strings) y se normalizaron a [].
+      Revisa si existen variables extra_vars o set_fact que esten sobrescribiendo audit_*_all.
   run_once: true
 
 # ==========================================================
@@ -130,8 +177,8 @@
     mode: "0644"
   delegate_to: invd-ts-ansible
   vars:
-    audit_linux_all: "{{ audit_linux_all }}"
-    audit_windows_all: "{{ audit_windows_all }}"
+    audit_linux_all: "{{ audit_linux_all_safe }}"
+    audit_windows_all: "{{ audit_windows_all_safe }}"
     audit_linux_single: "{{ omit }}"
     audit_windows_single: "{{ omit }}"
   when: report_generation_mode_safe in ['consolidated', 'both']
@@ -144,8 +191,8 @@
     mode: "0644"
   delegate_to: invd-ts-ansible
   vars:
-    audit_linux_all: "{{ audit_linux_all }}"
-    audit_windows_all: "{{ audit_windows_all }}"
+    audit_linux_all: "{{ audit_linux_all_safe }}"
+    audit_windows_all: "{{ audit_windows_all_safe }}"
     audit_linux_single: "{{ omit }}"
     audit_windows_single: "{{ omit }}"
   when: report_generation_mode_safe in ['consolidated', 'both']
@@ -158,8 +205,8 @@
     mode: "0644"
   delegate_to: invd-ts-ansible
   vars:
-    audit_linux_all: "{{ audit_linux_all }}"
-    audit_windows_all: "{{ audit_windows_all }}"
+    audit_linux_all: "{{ audit_linux_all_safe }}"
+    audit_windows_all: "{{ audit_windows_all_safe }}"
     audit_linux_single: "{{ omit }}"
     audit_windows_single: "{{ omit }}"
   when: report_generation_mode_safe in ['consolidated', 'both']
@@ -172,8 +219,8 @@
     mode: "0644"
   delegate_to: invd-ts-ansible
   vars:
-    audit_linux_all: "{{ audit_linux_all }}"
-    audit_windows_all: "{{ audit_windows_all }}"
+    audit_linux_all: "{{ audit_linux_all_safe }}"
+    audit_windows_all: "{{ audit_windows_all_safe }}"
     audit_linux_single: "{{ omit }}"
     audit_windows_single: "{{ omit }}"
   when: report_generation_mode_safe in ['consolidated', 'both']
@@ -208,11 +255,11 @@
     mode: "0644"
   delegate_to: invd-ts-ansible
   vars:
-    audit_linux_all: "{{ audit_linux_all }}"
-    audit_windows_all: "{{ audit_windows_all }}"
+    audit_linux_all: "{{ audit_linux_all_safe }}"
+    audit_windows_all: "{{ audit_windows_all_safe }}"
     audit_linux_single: "{{ [ item ] }}"
     audit_windows_single: []
-  loop: "{{ audit_linux_all | default([]) }}"
+  loop: "{{ audit_linux_all_safe | default([]) }}"
   when: report_generation_mode_safe in ['per_host', 'both']
 
 - name: Reportes por host (Linux) - HTML
@@ -222,11 +269,11 @@
     mode: "0644"
   delegate_to: invd-ts-ansible
   vars:
-    audit_linux_all: "{{ audit_linux_all }}"
-    audit_windows_all: "{{ audit_windows_all }}"
+    audit_linux_all: "{{ audit_linux_all_safe }}"
+    audit_windows_all: "{{ audit_windows_all_safe }}"
     audit_linux_single: "{{ [ item ] }}"
     audit_windows_single: []
-  loop: "{{ audit_linux_all | default([]) }}"
+  loop: "{{ audit_linux_all_safe | default([]) }}"
   when: report_generation_mode_safe in ['per_host', 'both']
 
 # ---- Windows por host
@@ -237,11 +284,11 @@
     mode: "0644"
   delegate_to: invd-ts-ansible
   vars:
-    audit_linux_all: "{{ audit_linux_all }}"
-    audit_windows_all: "{{ audit_windows_all }}"
+    audit_linux_all: "{{ audit_linux_all_safe }}"
+    audit_windows_all: "{{ audit_windows_all_safe }}"
     audit_linux_single: []
     audit_windows_single: "{{ [ item ] }}"
-  loop: "{{ audit_windows_all | default([]) }}"
+  loop: "{{ audit_windows_all_safe | default([]) }}"
   when: report_generation_mode_safe in ['per_host', 'both']
 
 - name: Reportes por host (Windows) - HTML
@@ -251,11 +298,11 @@
     mode: "0644"
   delegate_to: invd-ts-ansible
   vars:
-    audit_linux_all: "{{ audit_linux_all }}"
-    audit_windows_all: "{{ audit_windows_all }}"
+    audit_linux_all: "{{ audit_linux_all_safe }}"
+    audit_windows_all: "{{ audit_windows_all_safe }}"
     audit_linux_single: []
     audit_windows_single: "{{ [ item ] }}"
-  loop: "{{ audit_windows_all | default([]) }}"
+  loop: "{{ audit_windows_all_safe | default([]) }}"
   when: report_generation_mode_safe in ['per_host', 'both']
 
 # =========================
