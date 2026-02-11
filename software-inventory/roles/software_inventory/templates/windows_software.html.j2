@@ -16,41 +16,17 @@
   <h1>Windows Software Inventory</h1>
   <p><b>Generated:</b> {{ ansible_date_time.iso8601 }}</p>
 
-  {#
-    Selección "a prueba de balas":
-    - Usar audit_windows_single SOLO si:
-      * está definida
-      * es una secuencia (lista)
-      * NO es string
-      * tiene al menos 1 elemento
-      * el primer elemento es dict (mapping)
-      * y tiene clave/atributo host
-    - Si no cumple, usar audit_windows_all (consolidado)
-  #}
-  {% set _audit_windows =
-    (
-      audit_windows_single
-      if (
-        audit_windows_single is defined
-        and (audit_windows_single is sequence)
-        and (audit_windows_single is not string)
-        and (audit_windows_single | length > 0)
-        and ((audit_windows_single | first) is mapping)
-        and ((audit_windows_single | first).host is defined)
-      )
-      else (audit_windows_all | default([]))
-    )
-  %}
+  {% set _audit_windows = audit_windows_single | default(audit_windows | default([])) %}
 
   {% for hostres in _audit_windows %}
-    <h2>Host: {{ hostres.host }}</h2>
+    <h2>Host: {{ hostres.host | default('unknown') }}</h2>
 
     {% if hostres.status | default('ok') == 'unavailable' %}
-      <p class="down">{{ hostres.message }}</p>
+      <p class="down">{{ hostres.message | default('Servidor no disponible') }}</p>
     {% else %}
       <p class="muted">
-        <b>Checked at:</b> {{ hostres.checked_at }}
-        | <b>Total apps:</b> {{ hostres.total_packages | default(hostres.packages | length) }}
+        <b>Checked at:</b> {{ hostres.checked_at | default('') }}
+        | <b>Total apps:</b> {{ hostres.total_packages | default(hostres.packages | default([]) | length) }}
       </p>
 
       <table>

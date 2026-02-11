@@ -17,41 +17,18 @@
   <h1>Linux Software Inventory</h1>
   <p><b>Generated:</b> {{ ansible_date_time.iso8601 }}</p>
 
-  {# 
-    Selección "a prueba de balas":
-    - Usar audit_linux_single SOLO si:
-      * está definida
-      * es una secuencia (lista)
-      * NO es string
-      * tiene al menos 1 elemento
-      * el primer elemento es dict (mapping)
-      * y tiene clave/atributo host
-    - Si no cumple, usar audit_linux_all (consolidado)
-  #}
-  {% set _audit_linux =
-    (
-      audit_linux_single
-      if (
-        audit_linux_single is defined
-        and (audit_linux_single is sequence)
-        and (audit_linux_single is not string)
-        and (audit_linux_single | length > 0)
-        and ((audit_linux_single | first) is mapping)
-        and ((audit_linux_single | first).host is defined)
-      )
-      else (audit_linux_all | default([]))
-    )
-  %}
+  {# Si viene audit_linux_single (per_host), úsalo. Si no, usa audit_linux (consolidado) #}
+  {% set _audit_linux = audit_linux_single | default(audit_linux | default([])) %}
 
   {% for hostres in _audit_linux %}
-    <h2>Host: {{ hostres.host }}</h2>
+    <h2>Host: {{ hostres.host | default('unknown') }}</h2>
 
     {% if hostres.status | default('ok') == 'unavailable' %}
-      <p class="down"><b>Status:</b> {{ hostres.status }} | {{ hostres.message }}</p>
+      <p class="down"><b>Status:</b> {{ hostres.status }} | {{ hostres.message | default('Servidor no disponible') }}</p>
     {% else %}
       <p class="muted">
-        <b>Checked at:</b> {{ hostres.checked_at }}
-        | <b>Total packages:</b> {{ hostres.total_packages | default(hostres.packages | length) }}
+        <b>Checked at:</b> {{ hostres.checked_at | default('') }}
+        | <b>Total packages:</b> {{ hostres.total_packages | default(hostres.packages | default([]) | length) }}
       </p>
 
       <table>
@@ -67,9 +44,7 @@
           {% for pkg in hostres.packages | default([]) %}
           {% set pkg_name = (pkg.name | default('') | string | trim | lower) %}
           <tr>
-            <td class="nowrap">
-               {{ '*' if pkg_name in (baseline_linux_names | default([])) else '' }}
-            </td>
+            <td class="nowrap">{{ '*' if pkg_name in (baseline_linux_names | default([])) else '' }}</td>
             <td class="nowrap">{{ pkg.package_full | default('') }}</td>
             <td class="nowrap">{{ pkg.install_date | default('') }}</td>
             <td>{{ pkg.summary | default('') }}</td>
