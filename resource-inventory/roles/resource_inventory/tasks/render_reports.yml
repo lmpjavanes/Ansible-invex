@@ -1,26 +1,12 @@
 ---
-- name: Validar variables requeridas
+- name: Validar que report_dir este definido
   ansible.builtin.assert:
     that:
       - report_dir is defined
       - (report_dir | string | length) > 0
-      - report_output_mode is defined
-    fail_msg: "Faltan variables requeridas: report_dir y/o report_output_mode."
+    fail_msg: "La variable 'report_dir' no esta definida. Definela en el play de control antes de renderizar."
 
-- name: Validar valores permitidos para report_output_mode
-  ansible.builtin.assert:
-    that:
-      - report_output_mode in ['consolidated', 'per_host', 'both']
-    fail_msg: "Valor inválido en report_output_mode. Valores permitidos: consolidated, per_host, both."
-
-# En modo 'both' creamos subcarpetas dentro del timestamp para mantener orden
-- name: Definir subcarpetas de salida
-  ansible.builtin.set_fact:
-    consolidated_dir: "{{ report_dir if report_output_mode != 'both' else (report_dir ~ '/consolidated') }}"
-    per_host_dir: "{{ report_dir if report_output_mode != 'both' else (report_dir ~ '/per_host') }}"
-  run_once: true
-
-- name: Crear directorio base del reporte en invd-ts-ansible (si no existe)
+- name: Crear directorio del reporte en invd-ts-ansible (si no existe)
   ansible.builtin.file:
     path: "{{ report_dir }}"
     state: directory
@@ -28,127 +14,50 @@
   delegate_to: invd-ts-ansible
   run_once: true
 
-- name: Crear subcarpeta consolidated (solo modo both)
-  ansible.builtin.file:
-    path: "{{ consolidated_dir }}"
-    state: directory
-    mode: "0755"
-  delegate_to: invd-ts-ansible
-  run_once: true
-  when: report_output_mode == 'both'
-
-- name: Crear subcarpeta per_host (solo modo both)
-  ansible.builtin.file:
-    path: "{{ per_host_dir }}"
-    state: directory
-    mode: "0755"
-  delegate_to: invd-ts-ansible
-  run_once: true
-  when: report_output_mode == 'both'
-
-- name: Asegurar variables audit_* (evitar undefined)
+- name: Asegurar variables (evitar undefined)
   ansible.builtin.set_fact:
     audit_linux: "{{ audit_linux | default([]) }}"
     audit_windows: "{{ audit_windows | default([]) }}"
   run_once: true
 
-# =========================
-# CONSOLIDADO (si consolidated o both)
-# =========================
-- name: Consolidado | Reporte CSV (Linux)
+- name: Reporte CSV (Linux resources)
   ansible.builtin.template:
     src: linux_resources.csv.j2
-    dest: "{{ consolidated_dir }}/linux_resource_inventory.csv"
+    dest: "{{ report_dir }}/linux_resource_inventory.csv"
     mode: "0644"
   delegate_to: invd-ts-ansible
   run_once: true
-  when: report_output_mode in ['consolidated', 'both']
 
-- name: Consolidado | Reporte HTML (Linux)
+- name: Reporte HTML (Linux resources)
   ansible.builtin.template:
     src: linux_resources.html.j2
-    dest: "{{ consolidated_dir }}/linux_resource_inventory.html"
+    dest: "{{ report_dir }}/linux_resource_inventory.html"
     mode: "0644"
   delegate_to: invd-ts-ansible
   run_once: true
-  when: report_output_mode in ['consolidated', 'both']
 
-- name: Consolidado | Reporte CSV (Windows)
+- name: Reporte CSV (Windows resources)
   ansible.builtin.template:
     src: windows_resources.csv.j2
-    dest: "{{ consolidated_dir }}/windows_resource_inventory.csv"
+    dest: "{{ report_dir }}/windows_resource_inventory.csv"
     mode: "0644"
   delegate_to: invd-ts-ansible
   run_once: true
-  when: report_output_mode in ['consolidated', 'both']
 
-- name: Consolidado | Reporte HTML (Windows)
+- name: Reporte HTML (Windows resources)
   ansible.builtin.template:
     src: windows_resources.html.j2
-    dest: "{{ consolidated_dir }}/windows_resource_inventory.html"
+    dest: "{{ report_dir }}/windows_resource_inventory.html"
     mode: "0644"
   delegate_to: invd-ts-ansible
   run_once: true
-  when: report_output_mode in ['consolidated', 'both']
 
-# =========================
-# POR HOST (si per_host o both)
-# =========================
-- name: Por host | Linux CSV por host
-  ansible.builtin.template:
-    src: linux_resources.csv.j2
-    dest: "{{ per_host_dir }}/linux_{{ (item.server_name | default(item.host) | regex_replace('[^A-Za-z0-9._-]','_')) }}.csv"
-    mode: "0644"
-  delegate_to: invd-ts-ansible
-  vars:
-    audit_linux: "{{ [item] }}"
-  loop: "{{ audit_linux | default([]) }}"
-  run_once: true
-  when: report_output_mode in ['per_host', 'both']
-
-- name: Por host | Linux HTML por host
-  ansible.builtin.template:
-    src: linux_resources.html.j2
-    dest: "{{ per_host_dir }}/linux_{{ (item.server_name | default(item.host) | regex_replace('[^A-Za-z0-9._-]','_')) }}.html"
-    mode: "0644"
-  delegate_to: invd-ts-ansible
-  vars:
-    audit_linux: "{{ [item] }}"
-  loop: "{{ audit_linux | default([]) }}"
-  run_once: true
-  when: report_output_mode in ['per_host', 'both']
-
-- name: Por host | Windows CSV por host
-  ansible.builtin.template:
-    src: windows_resources.csv.j2
-    dest: "{{ per_host_dir }}/windows_{{ (item.server_name | default(item.host) | regex_replace('[^A-Za-z0-9._-]','_')) }}.csv"
-    mode: "0644"
-  delegate_to: invd-ts-ansible
-  vars:
-    audit_windows: "{{ [item] }}"
-  loop: "{{ audit_windows | default([]) }}"
-  run_once: true
-  when: report_output_mode in ['per_host', 'both']
-
-- name: Por host | Windows HTML por host
-  ansible.builtin.template:
-    src: windows_resources.html.j2
-    dest: "{{ per_host_dir }}/windows_{{ (item.server_name | default(item.host) | regex_replace('[^A-Za-z0-9._-]','_')) }}.html"
-    mode: "0644"
-  delegate_to: invd-ts-ansible
-  vars:
-    audit_windows: "{{ [item] }}"
-  loop: "{{ audit_windows | default([]) }}"
-  run_once: true
-  when: report_output_mode in ['per_host', 'both']
-
-- name: Mostrar resumen de salida
+- name: Mostrar rutas de salida
   ansible.builtin.debug:
     msg:
       - "Reportes generados en: {{ report_dir }}"
-      - "Modo de salida: {{ report_output_mode }}"
-      - "Consolidado dir: {{ consolidated_dir }}"
-      - "Per-host dir: {{ per_host_dir }}"
-      - "Linux hosts: {{ (audit_linux | default([])) | length }}"
-      - "Windows hosts: {{ (audit_windows | default([])) | length }}"
+      - "Linux CSV : {{ report_dir }}/linux_resource_inventory.csv"
+      - "Linux HTML: {{ report_dir }}/linux_resource_inventory.html"
+      - "Windows CSV : {{ report_dir }}/windows_resource_inventory.csv"
+      - "Windows HTML: {{ report_dir }}/windows_resource_inventory.html"
   run_once: true
