@@ -1,5 +1,5 @@
 host,checked_at,status,paquete_valido,package_nevra,install_date,summary
-{% set _audit_linux = audit_linux_single | default(audit_linux | default([])) %}
+{% set _audit_linux = audit_linux_single | default(audit_linux_all | default([])) %}
 {% for hostres in _audit_linux %}
 {% if hostres.status | default('ok') == 'unavailable' %}
 {{ hostres.host | default('') }},{{ hostres.checked_at | default('') }},unavailable,,,,

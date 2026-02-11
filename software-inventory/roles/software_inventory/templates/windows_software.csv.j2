@@ -1,5 +1,5 @@
 DisplayName,DisplayVersion,Publisher,InstallDate,Host,CheckedAt,Status,Message
-{% set _audit_windows = audit_windows_single | default(audit_windows | default([])) %}
+{% set _audit_windows = audit_windows_single | default(audit_windows_all | default([])) %}
 {% for hostres in _audit_windows -%}
 {% if hostres.status | default('ok') == 'unavailable' -%}
 ,,,,{{ hostres.host | default('') }},{{ hostres.checked_at | default('') }},{{ hostres.status | default('unavailable') }},{{ hostres.message | default('') }}

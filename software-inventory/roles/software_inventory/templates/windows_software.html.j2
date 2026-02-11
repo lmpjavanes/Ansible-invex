@@ -17,7 +17,7 @@
   <p><b>Generated:</b> {{ ansible_date_time.iso8601 }}</p>
 
   {# ✅ Si viene audit_windows_single (per_host), úsalo. Si no, usa audit_windows (consolidado) #}
-  {% set _audit_windows = audit_windows_single | default(audit_windows | default([])) %}
+  {% set _audit_windows = audit_windows_single | default(audit_windows_all | default([])) %}
 
   {% for hostres in _audit_windows %}
     <h2>Host: {{ hostres.host }}</h2>

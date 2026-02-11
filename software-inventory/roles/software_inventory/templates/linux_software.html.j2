@@ -18,7 +18,7 @@
   <p><b>Generated:</b> {{ ansible_date_time.iso8601 }}</p>
 
   {# ✅ Si viene audit_linux_single (per_host), úsalo. Si no, usa audit_linux (consolidado) #}
-  {% set _audit_linux = audit_linux_single | default(audit_linux) %}
+  {% set _audit_linux = audit_linux_single | default(audit_linux_all | default([])) %}
 
   {% for hostres in _audit_linux %}
     <h2>Host: {{ hostres.host }}</h2>
