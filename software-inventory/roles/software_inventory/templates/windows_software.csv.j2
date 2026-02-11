@@ -1,10 +1,11 @@
 DisplayName,DisplayVersion,Publisher,InstallDate,Host,CheckedAt,Status,Message
-{% for hostres in audit_windows -%}
+{% set _audit_windows = audit_windows_single | default(audit_windows | default([])) %}
+{% for hostres in _audit_windows -%}
 {% if hostres.status | default('ok') == 'unavailable' -%}
-,,,,{{ hostres.host }},{{ hostres.checked_at }},{{ hostres.status }},{{ hostres.message }}
+,,,,{{ hostres.host | default('') }},{{ hostres.checked_at | default('') }},{{ hostres.status | default('unavailable') }},{{ hostres.message | default('') }}
 {% else -%}
 {% for pkg in hostres.packages | default([]) -%}
-{{ pkg.DisplayName | default('') }},{{ pkg.DisplayVersion | default('') }},{{ pkg.Publisher | default('') }},{{ pkg.InstallDate | default('') }},{{ hostres.host }},{{ hostres.checked_at }},ok,
+{{ pkg.DisplayName | default('') }},{{ pkg.DisplayVersion | default('') }},{{ pkg.Publisher | default('') }},{{ pkg.InstallDate | default('') }},{{ hostres.host | default('') }},{{ hostres.checked_at | default('') }},ok,
 {% endfor -%}
 {% endif -%}
 {% endfor -%}

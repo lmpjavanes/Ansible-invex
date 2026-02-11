@@ -16,7 +16,10 @@
   <h1>Windows Software Inventory</h1>
   <p><b>Generated:</b> {{ ansible_date_time.iso8601 }}</p>
 
-  {% for hostres in audit_windows %}
+  {# ✅ Si viene audit_windows_single (per_host), úsalo. Si no, usa audit_windows (consolidado) #}
+  {% set _audit_windows = audit_windows_single | default(audit_windows | default([])) %}
+
+  {% for hostres in _audit_windows %}
     <h2>Host: {{ hostres.host }}</h2>
 
     {% if hostres.status | default('ok') == 'unavailable' %}
