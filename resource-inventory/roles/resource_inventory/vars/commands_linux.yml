@@ -73,3 +73,5 @@ ps_service_checks:
     cmd: "ps -ef | grep -i dockerd | grep -v grep"
   - name: "Base de Datos"
     cmd: "ps -ef | egrep -i 'pmon|postgres -D' | grep -v grep"
+  - name: "Python"
+    cmd: "ps -ef | grep -i python3 | grep -v grep"
