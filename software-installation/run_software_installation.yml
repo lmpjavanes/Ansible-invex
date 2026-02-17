@@ -1,0 +1,107 @@
+---
+- name: Software installation (Linux)
+  hosts: LINUX
+  gather_facts: yes
+  become: yes
+  ignore_unreachable: true
+  any_errors_fatal: false
+  max_fail_percentage: 100
+  roles:
+    - software_installation
+
+- name: Software installation (Windows PROD)
+  hosts: PROD
+  gather_facts: yes
+  become: no
+  ignore_unreachable: true
+  any_errors_fatal: false
+  max_fail_percentage: 100
+  roles:
+    - software_installation
+
+- name: Software installation (Windows DRP)
+  hosts: DRP
+  gather_facts: yes
+  become: no
+  ignore_unreachable: true
+  any_errors_fatal: false
+  max_fail_percentage: 100
+  roles:
+    - software_installation
+
+- name: Generar reportes (control)
+  hosts: invd-ts-ansible
+  gather_facts: yes
+  vars:
+    report_ts: "{{ ansible_date_time.iso8601_basic_short }}"
+    report_dir: "/reportes_ansible/software_installation/{{ report_ts }}"
+  tasks:
+    - name: Crear directorio del reporte
+      ansible.builtin.file:
+        path: "{{ report_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Inicializar listas consolidadas por OS
+      ansible.builtin.set_fact:
+        audit_linux: []
+        audit_windows: []
+
+    - name: Consolidar resultados LINUX (incluye no disponibles)
+      ansible.builtin.set_fact:
+        audit_linux: "{{ audit_linux + [ host_result ] }}"
+      vars:
+        host_result: >-
+          {{
+            hostvars[item].software_installation_asset
+            | default({
+                'host': item,
+                'os_family': 'Linux',
+                'status': 'unavailable',
+                'checked_at': ansible_date_time.iso8601,
+                'message': 'Servidor no disponible',
+                'packages': []
+              })
+          }}
+      loop: "{{ groups['LINUX'] | default([]) }}"
+
+    - name: Consolidar resultados WINDOWS (PROD) (incluye no disponibles)
+      ansible.builtin.set_fact:
+        audit_windows: "{{ audit_windows + [ host_result ] }}"
+      vars:
+        host_result: >-
+          {{
+            hostvars[item].software_installation_asset
+            | default({
+                'host': item,
+                'os_family': 'Windows',
+                'status': 'unavailable',
+                'checked_at': ansible_date_time.iso8601,
+                'message': 'Servidor no disponible',
+                'packages': []
+              })
+          }}
+      loop: "{{ groups['PROD'] | default([]) }}"
+
+    - name: Consolidar resultados WINDOWS (DRP) (incluye no disponibles)
+      ansible.builtin.set_fact:
+        audit_windows: "{{ audit_windows + [ host_result ] }}"
+      vars:
+        host_result: >-
+          {{
+            hostvars[item].software_installation_asset
+            | default({
+                'host': item,
+                'os_family': 'Windows',
+                'status': 'unavailable',
+                'checked_at': ansible_date_time.iso8601,
+                'message': 'Servidor no disponible',
+                'packages': []
+              })
+          }}
+      loop: "{{ groups['DRP'] | default([]) }}"
+
+    - name: Renderizar reportes usando templates del rol
+      ansible.builtin.include_role:
+        name: software_installation
+        tasks_from: render_reports.yml

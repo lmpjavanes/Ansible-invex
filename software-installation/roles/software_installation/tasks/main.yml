@@ -1,0 +1,89 @@
+---
+- name: Definir os_family seguro
+  ansible.builtin.set_fact:
+    os_family_safe: "{{ ansible_os_family | default('unknown') }}"
+
+- name: Detectar host no disponible
+  ansible.builtin.set_fact:
+    host_unavailable: "{{ os_family_safe == 'unknown' }}"
+
+- name: Marcar resultado como servidor no disponible
+  ansible.builtin.set_fact:
+    software_installation_asset:
+      host: "{{ inventory_hostname }}"
+      os_family: "{{ os_family_safe }}"
+      checked_at: "{{ ansible_date_time.iso8601 | default('') }}"
+      status: "unavailable"
+      message: "Servidor no disponible"
+      packages: []
+  when: host_unavailable
+
+- name: Terminar role en host no disponible
+  ansible.builtin.meta: end_host
+  when: host_unavailable
+
+# =========================
+# Linux
+# =========================
+- name: Linux | Cargar catalogo de paquetes (vars)
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/vars/packages_linux.yml"
+    name: cfg_linux
+  when: os_family_safe != 'Windows'
+
+- name: Linux | Inicializar lista de resultados
+  ansible.builtin.set_fact:
+    linux_install_results: []
+  when: os_family_safe != 'Windows'
+
+- name: Linux | Instalar paquetes definidos (extensible)
+  ansible.builtin.include_tasks: linux_install_one.yml
+  loop: "{{ cfg_linux.linux_packages | default([]) }}"
+  loop_control:
+    loop_var: pkg
+    label: "{{ pkg.name | default(pkg.file | default('package')) }}"
+  when: os_family_safe != 'Windows'
+
+- name: Linux | Construir asset final
+  ansible.builtin.set_fact:
+    software_installation_asset:
+      host: "{{ inventory_hostname }}"
+      os_family: "Linux"
+      checked_at: "{{ ansible_date_time.iso8601 }}"
+      status: "ok"
+      message: ""
+      packages: "{{ linux_install_results | default([]) }}"
+  when: os_family_safe != 'Windows'
+
+# =========================
+# Windows
+# =========================
+- name: Windows | Cargar catalogo de paquetes (vars)
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/vars/packages_windows.yml"
+    name: cfg_win
+  when: os_family_safe == 'Windows'
+
+- name: Windows | Inicializar lista de resultados
+  ansible.builtin.set_fact:
+    win_install_results: []
+  when: os_family_safe == 'Windows'
+
+- name: Windows | Instalar paquetes definidos (extensible)
+  ansible.builtin.include_tasks: windows_install_one.yml
+  loop: "{{ cfg_win.windows_packages | default([]) }}"
+  loop_control:
+    loop_var: wpkg
+    label: "{{ wpkg.name | default('windows_package') }}"
+  when: os_family_safe == 'Windows'
+
+- name: Windows | Construir asset final
+  ansible.builtin.set_fact:
+    software_installation_asset:
+      host: "{{ inventory_hostname }}"
+      os_family: "Windows"
+      checked_at: "{{ ansible_date_time.iso8601 }}"
+      status: "ok"
+      message: ""
+      packages: "{{ win_install_results | default([]) }}"
+  when: os_family_safe == 'Windows'

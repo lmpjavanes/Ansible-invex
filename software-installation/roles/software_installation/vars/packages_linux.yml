@@ -1,0 +1,23 @@
+---
+# Configuracion general (puedes sobreescribir por paquete)
+repo_path: /software_repo
+dest_dir: "/home/{{ ansible_user | default('root') }}"
+
+# Lista de paquetes Linux a instalar (extensible)
+linux_packages:
+  - name: SentinelAgent
+    file: SentinelAgent_Linux_x86_64_v25_1_3_6.rpm
+    # Por default: rpm -ivh <rpm>
+    install_cmd: "rpm -ivh"
+    validate_cmd: "rpm -qa | grep -i SentinelAngent || true"
+    # Token (reemplaza Aqui_va_el_token)
+    token: "{{ sentinel_token }}"
+    token_cmd: "/opt/sentinelone/bin/sentinelctl management token set {{ item.token }}"
+    start_cmd: "/opt/sentinelone/bin/sentinelctl control start"
+    status_cmd: "/opt/sentinelone/bin/sentinelctl control status"
+    # Opcional: metadata_cmd para forzar queryformat / parsing
+    # metadata_cmd: "rpm -qip --queryformat '%{NAME}\n%{VERSION}-%{RELEASE}\n%{VENDOR}\n%{SUMMARY}\n%{DESCRIPTION}\n' "
+  - name: htop
+    file: htop-3.2.2-1.el9.x86_64.rpm
+    install_cmd: "rpm -Uvh"
+    validate_cmd: "rpm -qa | grep -i '^htop' || true"

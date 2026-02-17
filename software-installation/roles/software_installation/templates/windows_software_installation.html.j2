@@ -1,0 +1,72 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Windows Software Installation Report</title>
+  <style>
+    body { font-family: Arial, sans-serif; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }
+    th { background: #f2f2f2; }
+    .bad { background: #ffe6e6; }
+    .ok { background: #e6ffe6; }
+    code { white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h2>Windows Software Installation Report</h2>
+  <p>Generado: {{ ansible_date_time.iso8601 | default('') }}</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Host</th>
+        <th>Checked At</th>
+        <th>Status</th>
+        <th>Paquete</th>
+        <th>Versión</th>
+        <th>Servicio activo</th>
+        <th>Servicio status</th>
+        <th>Comando ejecutado</th>
+        <th>Vendor</th>
+        <th>Summary</th>
+        <th>Description</th>
+        <th>Archivos</th>
+        <th>Share</th>
+        <th>Destino</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for hostres in (audit_windows | default([])) %}
+      {% if (hostres.status | default('ok')) == 'unavailable' %}
+      <tr class="bad">
+        <td>{{ hostres.host | default('') }}</td>
+        <td>{{ hostres.checked_at | default('') }}</td>
+        <td>unavailable</td>
+        <td colspan="11">{{ hostres.message | default('Servidor no disponible') }}</td>
+      </tr>
+      {% else %}
+        {% for pkg in (hostres.packages | default([])) %}
+        <tr class="ok">
+          <td>{{ hostres.host | default('') }}</td>
+          <td>{{ pkg.checked_at | default(hostres.checked_at | default('')) }}</td>
+          <td>ok</td>
+          <td>{{ pkg.package | default('') }}</td>
+          <td>{{ pkg.version_installed | default('') }}</td>
+          <td>{{ pkg.service_active | default('') }}</td>
+          <td>{{ pkg.service_status | default('') }}</td>
+          <td><code>{{ pkg.command_install | default('') }}</code></td>
+          <td>{{ pkg.vendor | default('') }}</td>
+          <td>{{ pkg.summary | default('') }}</td>
+          <td><code>{{ pkg.description | default('') }}</code></td>
+          <td>{{ pkg.files_copied | default('') }}</td>
+          <td><code>{{ pkg.share_path | default('') }}</code></td>
+          <td><code>{{ pkg.dest_dir | default('') }}</code></td>
+        </tr>
+        {% endfor %}
+      {% endif %}
+    {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>

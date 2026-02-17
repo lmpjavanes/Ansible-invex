@@ -1,0 +1,119 @@
+---
+# Requiere: wpkg (item del loop) y win_install_results definido.
+# Para NCPA (Nagios) por ejemplo:
+#  - share_path: "\\kirov01\SISTEMASOPERATIVOS_WINDOWSLINUX\Software\Agente Nagios\Nagios"
+#  - files: ["ncpa.exe","install_prod.bat","install_drp.bat"]
+#  - dest_dir: "C:\\sys"
+#  - batch_prod: "install_prod.bat"
+#  - batch_drp: "install_drp.bat"
+#
+- name: Windows | Definir variables de copia
+  ansible.builtin.set_fact:
+    _share_path: "{{ wpkg.share_path }}"
+    _dest_dir: "{{ wpkg.dest_dir | default('C:\\sys') }}"
+    _files: "{{ wpkg.files | default([]) }}"
+
+- name: Windows | Asegurar directorio destino
+  ansible.windows.win_file:
+    path: "{{ _dest_dir }}"
+    state: directory
+
+- name: Windows | Copiar archivos desde el share (UNC) a C:\sys
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = "Stop"
+      $src = "{{ _share_path }}"
+      $dst = "{{ _dest_dir }}"
+      $files = @({% for f in _files %}"{{ f }}"{% if not loop.last %},{% endif %}{% endfor %})
+      foreach ($f in $files) {
+        $from = Join-Path $src $f
+        $to   = Join-Path $dst $f
+        Copy-Item -Path $from -Destination $to -Force
+      }
+      "OK"
+  register: win_copy_share
+  changed_when: true
+  failed_when: win_copy_share.rc != 0
+
+- name: Windows | Determinar ambiente por grupo (PROD/DRP)
+  ansible.builtin.set_fact:
+    _env: >-
+      {% if 'PROD' in group_names %}PROD{% elif 'DRP' in group_names %}DRP{% else %}UNKNOWN{% endif %}
+
+- name: Windows | Seleccionar batch a ejecutar
+  ansible.builtin.set_fact:
+    _batch_file: >-
+      {% if _env == 'PROD' %}{{ wpkg.batch_prod }}{% elif _env == 'DRP' %}{{ wpkg.batch_drp }}{% else %}{{ wpkg.batch_prod }}{% endif %}
+
+- name: Windows | Ejecutar instalacion (batch)
+  ansible.windows.win_command: "{{ _dest_dir }}\\{{ _batch_file }}"
+  args:
+    chdir: "{{ _dest_dir }}"
+  register: win_install_cmd
+  changed_when: true
+  failed_when: false
+
+- name: Windows | Verificar servicio (opcional)
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = "SilentlyContinue"
+      $svcName = "{{ wpkg.service_name | default('') }}"
+      if (-not $svcName) { "{}"; exit 0 }
+      $svc = Get-Service -Name $svcName -ErrorAction SilentlyContinue
+      if (-not $svc) { '{"exists":false,"status":""}'; exit 0 }
+      $obj = @{ exists = $true; status = $svc.Status.ToString() }
+      $obj | ConvertTo-Json -Compress
+  register: win_svc_json
+  changed_when: false
+  failed_when: false
+
+- name: Windows | Obtener version 
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = "SilentlyContinue"
+      $path = "{{ wpkg.version_from_file | default('') }}"
+      if (-not $path) { '""'; exit 0 }
+      if (Test-Path $path) {
+        (Get-Item $path).VersionInfo.FileVersion | ConvertTo-Json -Compress
+      } else {
+        '""'
+      }
+  register: win_version_json
+  changed_when: false
+  failed_when: false
+
+- name: Windows | Normalizar JSONs
+  ansible.builtin.set_fact:
+    _svc: >-
+      {{
+        ((win_svc_json.output | default(['{}']))[0] | string | trim | from_json)
+        if (win_svc_json is defined) else {}
+      }}
+    _version: >-
+      {{
+        ((win_version_json.output | default(['""']))[0] | string | trim | from_json)
+        if (win_version_json is defined) else ''
+      }}
+
+- name: Windows | Registrar resultado por paquete
+  ansible.builtin.set_fact:
+    win_install_results: "{{ win_install_results + [ result_obj ] }}"
+  vars:
+    result_obj:
+      host: "{{ inventory_hostname }}"
+      checked_at: "{{ ansible_date_time.iso8601 }}"
+      package: "{{ wpkg.name | default('') }}"
+      vendor: "{{ wpkg.vendor | default('') }}"
+      summary: "{{ wpkg.summary | default('') }}"
+      description: "{{ wpkg.description | default('') }}"
+      share_path: "{{ _share_path }}"
+      dest_dir: "{{ _dest_dir }}"
+      files_copied: "{{ _files | join(',') }}"
+      command_install: "{{ _dest_dir ~ '\\' ~ _batch_file }}"
+      install_stdout: "{{ (win_install_cmd.stdout | default('')) | trim }}"
+      install_stderr: "{{ (win_install_cmd.stderr | default('')) | trim }}"
+      install_rc: "{{ win_install_cmd.rc | default('') }}"
+      service_name: "{{ wpkg.service_name | default('') }}"
+      service_status: "{{ _svc.status | default('') }}"
+      service_active: "{{ 'yes' if (_svc.status | default('') | lower) in ['running'] else ('no' if (_svc.exists | default(false)) else 'unknown') }}"
+      version_installed: "{{ _version | default('') }}"
