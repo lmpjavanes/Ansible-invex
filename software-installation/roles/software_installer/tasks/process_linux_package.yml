@@ -135,16 +135,25 @@
     # ============================================
     # PASO 7: INSTALACIÓN DEL PAQUETE
     # ============================================
-    - name: "Linux | Ejecutar comando de instalación de {{ pkg.name }}"
+    - name: "Linux | Verificar si {{ pkg.name }} ya está instalado"
+      ansible.builtin.shell: "rpm -q {{ pkg.name }}"
+      register: pkg_check
+      changed_when: false
+      failed_when: false
+      ignore_errors: true
+
+    - name: "Linux | Mostrar estado de instalación de {{ pkg.name }}"
+      ansible.builtin.debug:
+        msg: "{{ pkg.name }} ya está instalado (versión: {{ pkg_check.stdout }})"
+      when: pkg_check.rc == 0
+
+    - name: "Linux | Ejecutar comando de instalación de {{ pkg.name }} (si no está instalado)"
       ansible.builtin.shell: |
         set -x
         echo "=== INICIANDO INSTALACIÓN DE {{ pkg.name }} ==="
         echo "Archivo a instalar: {{ dest_full_path }}"
-        echo "Contenido del directorio:"
-        ls -la {{ dest_full_path | dirname }}
-        echo ""
-        echo "Ejecutando: {{ pkg.commands.install }} {{ dest_full_path }}"
-        {{ pkg.commands.install }} {{ dest_full_path }} 2>&1
+        echo "Ejecutando: rpm -ivh {{ dest_full_path }}"
+        rpm -ivh {{ dest_full_path }} 2>&1
         INSTALL_EXIT_CODE=$?
         echo "Código de salida: $INSTALL_EXIT_CODE"
         echo "=== FIN INSTALACIÓN ==="
@@ -154,13 +163,15 @@
       register: install_result
       failed_when: false
       changed_when: install_result.rc == 0
+      when: pkg_check.rc != 0
 
-    - name: "Linux | Mostrar resultado de instalación de {{ pkg.name }}"
-      ansible.builtin.debug:
-        msg:
-          - "Código de salida: {{ install_result.rc }}"
-          - "STDOUT: {{ install_result.stdout }}"
-          - "STDERR: {{ install_result.stderr }}"
+    - name: "Linux | Registrar resultado de instalación (para paquetes ya instalados)"
+      ansible.builtin.set_fact:
+        install_result: 
+          rc: 0
+          stdout: "Paquete {{ pkg.name }} ya estaba instalado (versión: {{ pkg_check.stdout }})"
+          stderr: ""
+      when: pkg_check.rc == 0
 
     # ============================================
     # PASO 8: VALIDACIÓN POST-INSTALACIÓN
@@ -201,17 +212,23 @@
       when: pkg.commands.status is defined
 
     # ============================================
-    # PASO 9: EXTRACCIÓN DE VERSIÓN
+    # PASO 9: EXTRACCIÓN DE VERSIÓN (CORREGIDO - VERSIÓN ROBUSTA)
     # ============================================
+    - name: "Linux | Obtener versión directamente con el comando {{ pkg.name }} --version"
+      ansible.builtin.shell: |
+        {{ pkg.name }} --version 2>/dev/null | head -1 | awk '{print $2}'
+      register: version_cmd
+      changed_when: false
+      failed_when: false
+
     - name: "Linux | Extraer versión instalada de {{ pkg.name }}"
       ansible.builtin.set_fact:
-        installed_version: >-
-          {%- if validation_result.stdout is defined and validation_result.stdout and pkg.version_regex is defined -%}
-            {{ validation_result.stdout | regex_search(pkg.version_regex, '\\1') | first | default('') }}
-          {%- else -%}
-            {{ '' }}
-          {%- endif -%}
+        installed_version: "{{ version_cmd.stdout | default('') }}"
 
+    - name: "Linux | Mostrar versión extraída de {{ pkg.name }}"
+      ansible.builtin.debug:
+        msg: "Versión detectada de {{ pkg.name }}: {{ installed_version }}"
+        
     # ============================================
     # PASO 10: VERIFICACIÓN MANUAL COMPLETA
     # ============================================
