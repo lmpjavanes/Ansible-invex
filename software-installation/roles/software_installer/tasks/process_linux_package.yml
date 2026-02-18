@@ -114,7 +114,7 @@
       ansible.builtin.debug:
         msg:
           - "Dependencias instaladas: {{ pkg.dependencies | join(', ') }}"
-          - "Resultado: {{ '✅ Exitoso' if deps_install is success else '❌ Falló' }}"
+          - "Resultado: {{ 'Exitoso' if deps_install is success else 'Falló' }}"
       when: pkg.dependencies is defined and pkg.dependencies | length > 0
 
     # ============================================
@@ -236,16 +236,16 @@
       ansible.builtin.shell: |
         echo "========== VERIFICACIÓN DE INSTALACIÓN: {{ pkg.name }} =========="
         echo "1. Verificando con which:"
-        which {{ pkg.name }} 2>/dev/null && echo "✅ {{ pkg.name }} encontrado en $(which {{ pkg.name }})" || echo "❌ {{ pkg.name }} NO encontrado en PATH"
+        which {{ pkg.name }} 2>/dev/null && echo " {{ pkg.name }} encontrado en $(which {{ pkg.name }})" || echo " {{ pkg.name }} NO encontrado en PATH"
         echo ""
         echo "2. Verificando con rpm:"
-        rpm -qa | grep -i {{ pkg.name }} || echo "❌ {{ pkg.name }} no encontrado en RPM database"
+        rpm -qa | grep -i {{ pkg.name }} || echo " {{ pkg.name }} no encontrado en RPM database"
         echo ""
         echo "3. Verificando versión (si está instalado):"
-        {{ pkg.name }} --version 2>/dev/null || echo "❌ No se pudo obtener versión"
+        {{ pkg.name }} --version 2>/dev/null || echo " No se pudo obtener versión"
         echo ""
         echo "4. Verificando archivo copiado:"
-        ls -la {{ dest_full_path }} 2>/dev/null || echo "❌ Archivo {{ dest_full_path }} no existe"
+        ls -la {{ dest_full_path }} 2>/dev/null || echo " Archivo {{ dest_full_path }} no existe"
         echo ""
         echo "5. Verificando dependencias instaladas:"
         rpm -qa | grep -E "hwloc|ncurses" || echo "No se encontraron dependencias"
