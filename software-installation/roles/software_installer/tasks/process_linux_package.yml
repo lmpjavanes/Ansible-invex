@@ -5,8 +5,7 @@
   vars:
     # Ruta del archivo fuente en invd-ts-ansible
     source_full_path: "/software_repo/{{ pkg.src_file }}"
-    # Ruta temporal en el servidor destino
-    temp_dest_path: "/tmp/{{ pkg.src_file }}"
+    # Ruta destino en el servidor Linux
     dest_full_path: "{{ pkg.dest_path | default('/tmp/') }}{{ pkg.src_file }}"
   block:
     - name: "Linux | Verificar que el archivo existe en invd-ts-ansible"
@@ -21,53 +20,39 @@
         msg: "El archivo {{ source_full_path }} no existe en invd-ts-ansible"
       when: not file_check.stat.exists
 
-    - name: "Linux | Copiar {{ pkg.src_file }} desde invd-ts-ansible al servidor destino (MEJORADO)"
-      ansible.builtin.fetch:
+    - name: "Linux | COPIAR ARCHIVO DESDE invd-ts-ansible AL SERVIDOR DESTINO (CORREGIDO)"
+      ansible.builtin.copy:
         src: "{{ source_full_path }}"
-        dest: "{{ temp_dest_path }}"
-        flat: yes
+        dest: "{{ dest_full_path }}"
+        mode: '0644'
       delegate_to: invd-ts-ansible
-      register: fetch_result
+      register: copy_result
 
-    - name: "Linux | Verificar que el archivo se copió correctamente"
+    - name: "Linux | Verificar que el archivo se copió correctamente en el destino"
       ansible.builtin.stat:
-        path: "{{ temp_dest_path }}"
+        path: "{{ dest_full_path }}"
       register: file_copied_check
 
     - name: "Linux | Mostrar información del archivo copiado"
       ansible.builtin.debug:
         msg:
-          - "Archivo copiado a: {{ temp_dest_path }}"
+          - "Archivo destino: {{ dest_full_path }}"
           - "Existe: {{ file_copied_check.stat.exists }}"
           - "Tamaño: {{ file_copied_check.stat.size if file_copied_check.stat.exists else 'N/A' }} bytes"
       when: file_copied_check.stat is defined
 
-    - name: "Linux | Mover el archivo a la ubicación final (si es necesario)"
-      ansible.builtin.copy:
-        src: "{{ temp_dest_path }}"
-        dest: "{{ dest_full_path }}"
-        mode: '0644'
-        remote_src: yes
-      when: pkg.dest_path is defined and pkg.dest_path != '/tmp/'
-      register: move_result
-
-    - name: "Linux | Verificar archivo en destino final"
-      ansible.builtin.stat:
-        path: "{{ dest_full_path }}"
-      register: dest_file_check
-
-    - name: "Linux | DIAGNÓSTICO - Listar contenido de /tmp antes de instalación"
-      ansible.builtin.shell: "ls -la /tmp/ | grep -i htop || echo 'No hay archivos htop en /tmp'"
-      register: tmp_listing_before
+    - name: "Linux | DIAGNÓSTICO - Listar contenido del directorio destino"
+      ansible.builtin.shell: "ls -la {{ dest_full_path | dirname }} | grep -i {{ pkg.name }} || echo 'No hay archivos de {{ pkg.name }} en {{ dest_full_path | dirname }}'"
+      register: dir_listing
       changed_when: false
 
-    - name: "Linux | DIAGNÓSTICO - Mostrar contenido de /tmp"
+    - name: "Linux | DIAGNÓSTICO - Mostrar contenido del directorio"
       ansible.builtin.debug:
-        msg: "{{ tmp_listing_before.stdout_lines }}"
+        msg: "{{ dir_listing.stdout_lines }}"
 
     - name: "Linux | Ejecutar comando de instalación con diagnóstico"
       ansible.builtin.shell: |
-        set -x  # Modo debug
+        set -x
         echo "=== INICIANDO INSTALACIÓN ==="
         echo "Archivo a instalar: {{ dest_full_path }}"
         echo "Contenido del directorio:"
@@ -127,7 +112,7 @@
       changed_when: false
       when: pkg.commands.status is defined
 
-    - name: "Linux | Extraer versión instalada (CORREGIDO)"
+    - name: "Linux | Extraer versión instalada"
       ansible.builtin.set_fact:
         installed_version: >-
           {%- if validation_result.stdout is defined and validation_result.stdout and pkg.version_regex is defined -%}
@@ -135,17 +120,6 @@
           {%- else -%}
             {{ '' }}
           {%- endif -%}
-
-    - name: "Linux | DIAGNÓSTICO - Listar contenido de /tmp después de instalación"
-      ansible.builtin.shell: "ls -la /tmp/ | grep -i htop || echo 'No hay archivos htop en /tmp'"
-      register: tmp_listing_after
-      changed_when: false
-
-    - name: "Linux | Limpiar archivo temporal (solo si está en /tmp y no es destino final)"
-      ansible.builtin.file:
-        path: "{{ temp_dest_path }}"
-        state: absent
-      when: temp_dest_path != dest_full_path and temp_dest_path == '/tmp/' + pkg.src_file
 
     - name: "Linux | VERIFICACIÓN MANUAL - Comprobar si {{ pkg.name }} está instalado"
       ansible.builtin.shell: |
@@ -162,11 +136,11 @@
         echo "4. Verificando archivo copiado:"
         ls -la {{ dest_full_path }} 2>/dev/null || echo "❌ Archivo {{ dest_full_path }} no existe"
         echo ""
-        echo "5. Verificando dependencias (opcional):"
-        rpm -qR {{ pkg.name }} 2>/dev/null | head -5 || echo "❌ No se pueden verificar dependencias"
+        echo "5. Verificando dependencias:"
+        rpm -qR {{ pkg.name }} 2>/dev/null | head -5 || echo "❌ No se pueden verificar dependencias o paquete no instalado"
         echo ""
-        echo "6. Verificando archivos en /tmp:"
-        ls -la /tmp/ | grep -i {{ pkg.name }} || echo "No hay archivos de {{ pkg.name }} en /tmp"
+        echo "6. Verificando archivos en directorio:"
+        ls -la {{ dest_full_path | dirname }} | grep -i {{ pkg.name }} || echo "No hay archivos de {{ pkg.name }} en {{ dest_full_path | dirname }}"
         echo "========== FIN VERIFICACIÓN =========="
       args:
         executable: /bin/bash
@@ -189,6 +163,8 @@
           {{ verification_check.stdout }}
           ========================================
           DIAGNÓSTICO ADICIONAL:
+          - Archivo destino: {{ dest_full_path }}
+          - Existe archivo: {{ file_copied_check.stat.exists if file_copied_check.stat is defined else 'N/A' }}
           - Código instalación: {{ install_result.rc }}
           - Output instalación: {{ install_result.stdout }}
           - Error instalación: {{ install_result.stderr }}
@@ -207,7 +183,7 @@
           status: "{{ 'success' if validation_result.rc is defined and validation_result.rc == 0 else 'failed' }}"
           install_date: "{{ ansible_date_time.iso8601 }}"
           version_installed: "{{ installed_version | default('') }}"
-          copy_output: "{{ fetch_result | default({}) }}"
+          copy_output: "{{ copy_result | default({}) }}"
           install_output: "{{ install_result.stdout | default('') }}"
           install_stderr: "{{ install_result.stderr | default('') }}"
           install_rc: "{{ install_result.rc | default('') }}"
