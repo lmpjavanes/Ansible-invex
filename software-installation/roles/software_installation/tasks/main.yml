@@ -31,19 +31,84 @@
     name: cfg_linux
   when: os_family_safe != 'Windows'
 
-- name: Linux | Debug cfg_linux
+# ---- DEBUGS DIAGNOSTICO LINUX (START) ----
+- name: Linux | Debug | role_path y archivo vars esperado
+  ansible.builtin.debug:
+    msg:
+      - "role_path={{ role_path }}"
+      - "vars_file={{ role_path }}/vars/packages_linux.yml"
+  when: os_family_safe != 'Windows'
+
+- name: Linux | Debug | cfg_linux definido?
+  ansible.builtin.debug:
+    msg: "cfg_linux is defined={{ cfg_linux is defined }}"
+  when: os_family_safe != 'Windows'
+
+- name: Linux | Debug | cfg_linux (contenido completo)
+  ansible.builtin.debug:
+    var: cfg_linux
+  when: os_family_safe != 'Windows'
+
+- name: Linux | Debug | keys dentro de cfg_linux
+  ansible.builtin.debug:
+    msg: "cfg_linux keys={{ cfg_linux.keys() | list if cfg_linux is defined else 'cfg_linux NO definido' }}"
+  when: os_family_safe != 'Windows'
+
+- name: Linux | Debug | cfg_linux.linux_packages definido?
+  ansible.builtin.debug:
+    msg: "cfg_linux.linux_packages is defined={{ (cfg_linux.linux_packages is defined) if (cfg_linux is defined) else false }}"
+  when: os_family_safe != 'Windows'
+
+- name: Linux | Debug | valor cfg_linux.linux_packages (si existe)
   ansible.builtin.debug:
     var: cfg_linux.linux_packages
+  when:
+    - os_family_safe != 'Windows'
+    - cfg_linux is defined
+    - cfg_linux.linux_packages is defined
+
+- name: Linux | Debug | linux_packages plano existe?
+  ansible.builtin.debug:
+    msg:
+      - "linux_packages (plano) is defined={{ linux_packages is defined }}"
+      - "repo_path (plano) is defined={{ repo_path is defined }}"
+      - "dest_dir (plano) is defined={{ dest_dir is defined }}"
   when: os_family_safe != 'Windows'
-  
+
+- name: Linux | Debug | valor linux_packages plano (si existe)
+  ansible.builtin.debug:
+    var: linux_packages
+  when:
+    - os_family_safe != 'Windows'
+    - linux_packages is defined
+
+# Opcional: intenta leer el archivo vars y mostrarlo (solo si existe en el host remoto).
+# Si falla, NO rompe el play.
+- name: Linux | Debug | mostrar contenido de packages_linux.yml (opcional)
+  ansible.builtin.shell: "sed -n '1,200p' {{ role_path }}/vars/packages_linux.yml"
+  register: dbg_varsfile
+  changed_when: false
+  failed_when: false
+  when: os_family_safe != 'Windows'
+
+- name: Linux | Debug | salida contenido packages_linux.yml (opcional)
+  ansible.builtin.debug:
+    var: dbg_varsfile.stdout
+  when:
+    - os_family_safe != 'Windows'
+    - dbg_varsfile is defined
+    - (dbg_varsfile.stdout | default('') | length) > 0
+# ---- DEBUGS DIAGNOSTICO LINUX (END) ----
+
 - name: Linux | Inicializar lista de resultados
   ansible.builtin.set_fact:
     linux_install_results: []
   when: os_family_safe != 'Windows'
 
+# Importante: aquí dejo fallback por si cfg_linux no se pobló pero quedaron vars planas
 - name: Linux | Instalar paquetes definidos (extensible)
   ansible.builtin.include_tasks: linux_install_one.yml
-  loop: "{{ cfg_linux.linux_packages | default([]) }}"
+  loop: "{{ (cfg_linux.linux_packages | default(linux_packages | default([]))) }}"
   loop_control:
     loop_var: pkg
     label: "{{ pkg.name | default(pkg.file | default('package')) }}"
