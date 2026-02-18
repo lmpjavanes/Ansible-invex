@@ -22,23 +22,30 @@
         msg: "El archivo {{ source_full_path }} no existe en invd-ts-ansible"
       when: not file_check.stat.exists
 
-    - name: "Linux | COPIAR ARCHIVO USANDO SCP (SOLUCIÓN DIRECTA)"
+    - name: "Linux | COPIAR ARCHIVO USANDO SCP CON TIMEOUT"
       ansible.builtin.shell: |
         set -x
         echo "=== INICIANDO COPIA CON SCP ==="
         echo "Origen: {{ source_server }}:{{ source_full_path }}"
         echo "Destino: {{ dest_full_path }}"
         
-        # Verificar conectividad primero
-        ping -c 1 {{ source_server }} > /dev/null 2>&1
+        # Verificar conectividad primero (con timeout)
+        timeout 5 ping -c 1 {{ source_server }} > /dev/null 2>&1
         if [ $? -ne 0 ]; then
           echo "❌ No hay conectividad con {{ source_server }}"
           exit 1
         fi
         
-        # Copiar el archivo usando scp
-        scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-            {{ source_server }}:{{ source_full_path }} {{ dest_full_path }}
+        # Limpiar known_hosts para evitar problemas
+        ssh-keygen -f "/root/.ssh/known_hosts" -R "{{ source_server }}" 2>/dev/null || true
+        
+        # Copiar el archivo usando scp con timeout de 30 segundos
+        timeout 30 scp -v -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=5 \
+            -o UserKnownHostsFile=/dev/null \
+            -o LogLevel=ERROR \
+            -o PasswordAuthentication=no \
+            {{ source_server }}:{{ source_full_path }} {{ dest_full_path }} 2>&1
         
         SCP_EXIT_CODE=$?
         echo "Código de salida SCP: $SCP_EXIT_CODE"
@@ -49,13 +56,15 @@
           if [ -f {{ dest_full_path }} ]; then
             echo "✅ Verificación: archivo existe en destino"
             echo "Tamaño: $(ls -lh {{ dest_full_path }} | awk '{print $5}')"
-            echo "Permisos: $(ls -l {{ dest_full_path }} | awk '{print $1}')"
           else
             echo "❌ ERROR: Archivo no encontrado después de SCP"
             exit 1
           fi
+        elif [ $SCP_EXIT_CODE -eq 124 ]; then
+          echo "❌ TIMEOUT: SCP tardó más de 30 segundos"
+          exit 124
         else
-          echo "❌ Error en SCP"
+          echo "❌ Error en SCP (código: $SCP_EXIT_CODE)"
           exit $SCP_EXIT_CODE
         fi
         echo "=== FIN COPIA SCP ==="
@@ -63,7 +72,9 @@
         executable: /bin/bash
       register: scp_result
       changed_when: scp_result.rc == 0
-      failed_when: false
+      failed_when: scp_result.rc != 0 and scp_result.rc != 124
+      async: 45  # Timeout de Ansible de 45 segundos
+      poll: 5    # Verificar cada 5 segundos
 
     - name: "Linux | Mostrar resultado de SCP"
       ansible.builtin.debug:
