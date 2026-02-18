@@ -31,6 +31,11 @@
     name: cfg_linux
   when: os_family_safe != 'Windows'
 
+- name: Linux | Debug cfg_linux
+  ansible.builtin.debug:
+    var: cfg_linux.linux_packages
+  when: os_family_safe != 'Windows'
+  
 - name: Linux | Inicializar lista de resultados
   ansible.builtin.set_fact:
     linux_install_results: []
