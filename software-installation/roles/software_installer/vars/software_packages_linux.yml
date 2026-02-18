@@ -1,19 +1,12 @@
 ---
-# software_packages_linux.yml
-# Lista de paquetes a instalar en servidores Linux.
-
 linux_packages:
-  # Paquete 2: htop (nuevo)
   - name: "htop"
     description: "Visor interactivo de procesos para Linux"
     vendor: "htop.dev"
     src_file: "htop-3.3.0-1.el9.x86_64.rpm"
-    dest_path: "/tmp/"  # Ruta temporal para copiar el RPM
+    dest_path: "/tmp/"
     package_type: "rpm"
     commands:
       install: "rpm -ivh"
       post_install_validation: "rpm -qa | grep -i htop"
-      # htop no necesita activación, start ni status (es una herramienta, no servicio)
-      # Estos campos son opcionales, puedes omitirlos o dejarlos vacíos
     version_regex: "htop-(\\d+\\.\\d+\\.\\d+)"
-    # Nota: Al no tener activation/start/status, el playbook omitirá esos pasos automáticamente

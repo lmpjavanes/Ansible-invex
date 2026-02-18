@@ -7,13 +7,14 @@
     source_full_path: "/software_repo/{{ pkg.src_file }}"
     # Ruta temporal en el servidor destino
     temp_dest_path: "/tmp/{{ pkg.src_file }}"
+    dest_full_path: "{{ pkg.dest_path | default('/tmp/') }}{{ pkg.src_file }}"
   block:
     - name: "Linux | Verificar que el archivo existe en invd-ts-ansible"
       ansible.builtin.stat:
         path: "{{ source_full_path }}"
       delegate_to: invd-ts-ansible
       register: file_check
-      run_once: true  # Solo verificamos una vez
+      run_once: true
 
     - name: "Linux | Detener si el archivo no existe"
       ansible.builtin.fail:
@@ -31,12 +32,13 @@
     - name: "Linux | Mover el archivo a la ubicación final (si es necesario)"
       ansible.builtin.copy:
         src: "{{ temp_dest_path }}"
-        dest: "{{ pkg.dest_path | default('/tmp/') }}{{ pkg.src_file }}"
+        dest: "{{ dest_full_path }}"
         mode: '0644'
+        remote_src: yes
       when: pkg.dest_path is defined and pkg.dest_path != '/tmp/'
 
     - name: "Linux | Ejecutar comando de instalación"
-      ansible.builtin.shell: "{{ pkg.commands.install }} {{ pkg.dest_path | default('/tmp/') }}{{ pkg.src_file }}"
+      ansible.builtin.shell: "{{ pkg.commands.install }} {{ dest_full_path }}"
       args:
         executable: /bin/bash
       register: install_result
@@ -78,18 +80,22 @@
       changed_when: false
       when: pkg.commands.status is defined
 
-    - name: "Linux | Extraer versión instalada (usando regex)"
+    - name: "Linux | Extraer versión instalada (CORREGIDO)"
       ansible.builtin.set_fact:
-        installed_version: "{{ validation_result.stdout | regex_search(pkg.version_regex, '\\1') | first | default('') }}"
-      when: pkg.version_regex is defined
+        installed_version: >-
+          {%- if validation_result.stdout is defined and validation_result.stdout and pkg.version_regex is defined -%}
+            {{ validation_result.stdout | regex_search(pkg.version_regex, '\\1') | first | default('') }}
+          {%- else -%}
+            {{ '' }}
+          {%- endif -%}
 
     - name: "Linux | Limpiar archivo temporal"
       ansible.builtin.file:
         path: "{{ temp_dest_path }}"
         state: absent
-      when: temp_dest_path != (pkg.dest_path | default('/tmp/') + pkg.src_file)
+      when: temp_dest_path != dest_full_path
 
-    - name: "Linux | Anexar resultado de este paquete a la lista del host"
+    - name: "Linux | Anexar resultado de este paquete a la lista del host (CORREGIDO)"
       ansible.builtin.set_fact:
         host_installation_results: "{{ host_installation_results + [ pkg_result ] }}"
       vars:
@@ -97,14 +103,15 @@
           package_name: "{{ pkg.name }}"
           description: "{{ pkg.description | default('') }}"
           vendor: "{{ pkg.vendor | default('') }}"
-          status: "{{ 'success' if validation_result.rc == 0 else 'failed' }}"
+          status: "{{ 'success' if validation_result.rc is defined and validation_result.rc == 0 else 'failed' }}"
           install_date: "{{ ansible_date_time.iso8601 }}"
           version_installed: "{{ installed_version | default('') }}"
-          copy_output: "{{ fetch_result }}"
-          install_output: "{{ install_result.stdout }}"
-          validation_output: "{{ validation_result.stdout }}"
+          copy_output: "{{ fetch_result | default({}) }}"
+          install_output: "{{ install_result.stdout | default('') }}"
+          validation_output: "{{ validation_result.stdout | default('') }}"
           activation_output: "{{ activation_result.stdout | default('') }}"
           status_output: "{{ status_result.stdout | default('') }}"
+          message: ""
 
   rescue:
     - name: "Linux | Error en el bloque de instalación de {{ pkg.name }}"
@@ -118,4 +125,9 @@
           status: "failed"
           install_date: "{{ ansible_date_time.iso8601 }}"
           version_installed: ""
-          message: "Error crítico durante la instalación: {{ ansible_failed_result.msg | default('Error desconocido') }}"
+          copy_output: {}
+          install_output: ""
+          validation_output: ""
+          activation_output: ""
+          status_output: ""
+          message: "Error durante la instalación: {{ ansible_failed_result.msg | default('Error desconocido') }}"
