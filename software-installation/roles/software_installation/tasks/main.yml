@@ -1,3 +1,4 @@
+---
 - name: Definir os_family seguro
   ansible.builtin.set_fact:
     os_family_safe: "{{ ansible_os_family | default('unknown') }}"
@@ -21,31 +22,36 @@
   ansible.builtin.meta: end_host
   when: host_unavailable
 
-
 # =====================================================
-# CARGAR CATALOGO GLOBAL UNA SOLA VEZ (CONTROL NODE)
+# CARGAR CATALOGO LINUX UNA SOLA VEZ EN EL CONTROL (EE)
 # =====================================================
-
-- name: Cargar catalogo Linux en localhost
+- name: Linux | Cargar catalogo (vars) en control (run_once)
   ansible.builtin.include_vars:
     file: "{{ role_path }}/vars/packages_linux.yml"
   delegate_to: localhost
   run_once: true
   register: linux_vars_loaded
 
-- name: Publicar variables Linux globales
+- name: Linux | Publicar catalogo global (run_once)
   ansible.builtin.set_fact:
     global_linux_packages: "{{ linux_vars_loaded.ansible_facts.linux_packages | default([]) }}"
     global_repo_path: "{{ linux_vars_loaded.ansible_facts.repo_path | default('/software_repo') }}"
-    global_dest_dir: "{{ linux_vars_loaded.ansible_facts.dest_dir | default('/home/root') }}"
+    global_dest_dir: "{{ linux_vars_loaded.ansible_facts.dest_dir | default('/home/' ~ (ansible_user | default('root'))) }}"
   delegate_to: localhost
   run_once: true
 
+- name: Linux | Debug catalogo global (run_once)
+  ansible.builtin.debug:
+    msg:
+      - "global_repo_path={{ hostvars['localhost'].global_repo_path | default('N/A') }}"
+      - "global_dest_dir={{ hostvars['localhost'].global_dest_dir | default('N/A') }}"
+      - "global_linux_packages_count={{ (hostvars['localhost'].global_linux_packages | default([])) | length }}"
+  run_once: true
+  when: os_family_safe != 'Windows'
 
-# =====================================================
-# LINUX
-# =====================================================
-
+# =========================
+# Linux
+# =========================
 - name: Linux | Inicializar lista de resultados
   ansible.builtin.set_fact:
     linux_install_results: []
@@ -70,12 +76,10 @@
       packages: "{{ linux_install_results | default([]) }}"
   when: os_family_safe != 'Windows'
 
-
-# =====================================================
-# WINDOWS
-# =====================================================
-
-- name: Windows | Cargar catalogo
+# =========================
+# Windows
+# =========================
+- name: Windows | Cargar catalogo de paquetes (vars)
   ansible.builtin.include_vars:
     file: "{{ role_path }}/vars/packages_windows.yml"
     name: cfg_win
@@ -86,11 +90,12 @@
     win_install_results: []
   when: os_family_safe == 'Windows'
 
-- name: Windows | Instalar paquetes definidos
+- name: Windows | Instalar paquetes definidos (extensible)
   ansible.builtin.include_tasks: windows_install_one.yml
   loop: "{{ cfg_win.windows_packages | default([]) }}"
   loop_control:
     loop_var: wpkg
+    label: "{{ wpkg.name | default('windows_package') }}"
   when: os_family_safe == 'Windows'
 
 - name: Windows | Construir asset final
