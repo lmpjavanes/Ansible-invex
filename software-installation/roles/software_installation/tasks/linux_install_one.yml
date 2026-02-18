@@ -1,36 +1,36 @@
 ---
 # Requiere: pkg (loop_var), linux_install_results definido.
 # Este archivo está preparado para AAP:
-# - Lee repo_path/dest_dir desde hostvars['invd-ts-ansible'].cfg_linux (variables cargadas en el host delegado).
-# - Copia RPM desde invd-ts-ansible hacia el host destino vía rsync (synchronize push).
+# - Toma repo_path/dest_dir desde hostvars['localhost'].global_repo_path/global_dest_dir (catalogo cargado en control).
+# - Copia RPM desde _repo_host hacia el host destino vía rsync (synchronize push).
 
 - name: Linux | Definir host repositorio (controller)
   ansible.builtin.set_fact:
     _repo_host: "{{ pkg.repo_host | default('invd-ts-ansible') }}"
 
-- name: Linux | Definir rutas del paquete (desde host repositorio)
+- name: Linux | Definir rutas del paquete (desde catalogo global en localhost)
   ansible.builtin.set_fact:
     _repo_path: >-
       {{
         pkg.repo_path
-        | default(hostvars[_repo_host].cfg_linux.repo_path | default('/software_repo'))
+        | default(hostvars['localhost'].global_repo_path | default('/software_repo'))
       }}
     _dest_dir: >-
       {{
         pkg.dest_dir
-        | default(hostvars[_repo_host].cfg_linux.dest_dir
+        | default(hostvars['localhost'].global_dest_dir
           | default('/home/' ~ (ansible_user | default('root'))))
       }}
     _pkg_file: "{{ pkg.file }}"
     _pkg_src: >-
       {{
-        (pkg.repo_path | default(hostvars[_repo_host].cfg_linux.repo_path | default('/software_repo')))
+        (pkg.repo_path | default(hostvars['localhost'].global_repo_path | default('/software_repo')))
         ~ '/'
         ~ pkg.file
       }}
     _pkg_dest: >-
       {{
-        (pkg.dest_dir | default(hostvars[_repo_host].cfg_linux.dest_dir
+        (pkg.dest_dir | default(hostvars['localhost'].global_dest_dir
           | default('/home/' ~ (ansible_user | default('root')))))
         ~ '/'
         ~ pkg.file
@@ -55,7 +55,7 @@
   ansible.builtin.set_fact:
     _pkg_exists_in_repo: "{{ (repo_pkg_stat.stat.exists | default(false)) | bool }}"
 
-# 2) Copiar RPM desde invd-ts-ansible hacia el host destino
+# 2) Copiar RPM desde repo hacia el host destino
 - name: Linux | Copiar paquete desde repo hacia el host (rsync push)
   ansible.posix.synchronize:
     src: "{{ _pkg_src }}"
@@ -68,7 +68,7 @@
   failed_when: false
   when: _pkg_exists_in_repo
 
-# 3) Instalar RPM en el host destino (solo si se pudo copiar)
+# 3) Instalar RPM en el host destino
 - name: Linux | Ejecutar instalacion
   ansible.builtin.shell: "{{ pkg.install_cmd | default('rpm -ivh') }} {{ _pkg_dest }}"
   args:
@@ -76,9 +76,7 @@
   register: linux_install_cmd
   changed_when: true
   failed_when: false
-  when:
-    - _pkg_exists_in_repo
-    - (linux_sync is not defined) or (linux_sync is defined)
+  when: _pkg_exists_in_repo
 
 # 4) Validar instalacion (no falla el play)
 - name: Linux | Validar instalacion
@@ -88,8 +86,7 @@
   register: linux_validate_cmd
   changed_when: false
   failed_when: false
-  when:
-    - _pkg_exists_in_repo
+  when: _pkg_exists_in_repo
 
 # 5) Extraer metadata (del RPM local ya copiado al destino)
 - name: Linux | Extraer metadata del RPM (name/version/vendor/summary/description)
@@ -102,8 +99,7 @@
   register: linux_rpm_meta
   changed_when: false
   failed_when: false
-  when:
-    - _pkg_exists_in_repo
+  when: _pkg_exists_in_repo
 
 - name: Linux | Parsear metadata
   ansible.builtin.set_fact:
@@ -117,8 +113,7 @@
         (_meta_lines | length > 4)
         | ternary((_meta_lines[4:] | join('\n') | trim), (pkg.description | default('')))
       }}
-  when:
-    - _pkg_exists_in_repo
+  when: _pkg_exists_in_repo
 
 # 6) Activación por token (opcional)
 - name: Linux | Activacion por token (opcional)
@@ -165,7 +160,7 @@
     - _pkg_exists_in_repo
     - (pkg.status_cmd | default('') | string | length) > 0
 
-# 9) Determinar status del paquete (ok/failed) con base en lo ocurrido
+# 9) Determinar status del paquete (ok/failed)
 - name: Linux | Determinar status final del paquete
   ansible.builtin.set_fact:
     _pkg_status: >-
