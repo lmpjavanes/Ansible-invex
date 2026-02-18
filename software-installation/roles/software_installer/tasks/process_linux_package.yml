@@ -7,6 +7,8 @@
     source_full_path: "/software_repo/{{ pkg.src_file }}"
     # Ruta destino en el servidor Linux
     dest_full_path: "{{ pkg.dest_path | default('/tmp/') }}{{ pkg.src_file }}"
+    # IP de invd-ts-ansible (hardcodeada o desde variable)
+    source_server: "192.168.56.13"
   block:
     - name: "Linux | Verificar que el archivo existe en invd-ts-ansible"
       ansible.builtin.stat:
@@ -20,16 +22,57 @@
         msg: "El archivo {{ source_full_path }} no existe en invd-ts-ansible"
       when: not file_check.stat.exists
 
-    - name: "Linux | COPIAR ARCHIVO DESDE invd-ts-ansible AL SERVIDOR DESTINO (CORREGIDO)"
-      ansible.builtin.copy:
-        src: "{{ source_full_path }}"
-        dest: "{{ dest_full_path }}"
-        mode: '0644'
-        remote_src: yes  # ¡ESTO ES CLAVE! Indica que el src está en el servidor remoto (invd-ts-ansible)
-      delegate_to: invd-ts-ansible
-      register: copy_result
+    - name: "Linux | COPIAR ARCHIVO USANDO SCP (SOLUCIÓN DIRECTA)"
+      ansible.builtin.shell: |
+        set -x
+        echo "=== INICIANDO COPIA CON SCP ==="
+        echo "Origen: {{ source_server }}:{{ source_full_path }}"
+        echo "Destino: {{ dest_full_path }}"
+        
+        # Verificar conectividad primero
+        ping -c 1 {{ source_server }} > /dev/null 2>&1
+        if [ $? -ne 0 ]; then
+          echo "❌ No hay conectividad con {{ source_server }}"
+          exit 1
+        fi
+        
+        # Copiar el archivo usando scp
+        scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+            {{ source_server }}:{{ source_full_path }} {{ dest_full_path }}
+        
+        SCP_EXIT_CODE=$?
+        echo "Código de salida SCP: $SCP_EXIT_CODE"
+        
+        if [ $SCP_EXIT_CODE -eq 0 ]; then
+          echo "✅ Archivo copiado exitosamente"
+          # Verificar que el archivo existe después de la copia
+          if [ -f {{ dest_full_path }} ]; then
+            echo "✅ Verificación: archivo existe en destino"
+            echo "Tamaño: $(ls -lh {{ dest_full_path }} | awk '{print $5}')"
+            echo "Permisos: $(ls -l {{ dest_full_path }} | awk '{print $1}')"
+          else
+            echo "❌ ERROR: Archivo no encontrado después de SCP"
+            exit 1
+          fi
+        else
+          echo "❌ Error en SCP"
+          exit $SCP_EXIT_CODE
+        fi
+        echo "=== FIN COPIA SCP ==="
+      args:
+        executable: /bin/bash
+      register: scp_result
+      changed_when: scp_result.rc == 0
+      failed_when: false
 
-    - name: "Linux | Verificar que el archivo se copió correctamente en el destino"
+    - name: "Linux | Mostrar resultado de SCP"
+      ansible.builtin.debug:
+        msg:
+          - "Código SCP: {{ scp_result.rc }}"
+          - "Output: {{ scp_result.stdout }}"
+          - "Error: {{ scp_result.stderr }}"
+
+    - name: "Linux | Verificar que el archivo se copió correctamente"
       ansible.builtin.stat:
         path: "{{ dest_full_path }}"
       register: file_copied_check
@@ -40,72 +83,12 @@
           - "Archivo destino: {{ dest_full_path }}"
           - "Existe: {{ file_copied_check.stat.exists }}"
           - "Tamaño: {{ file_copied_check.stat.size if file_copied_check.stat.exists else 'N/A' }} bytes"
-      when: file_copied_check.stat is defined
+          - "Permisos: {{ file_copied_check.stat.mode if file_copied_check.stat.exists else 'N/A' }}"
 
-    - name: "Linux | DIAGNÓSTICO - Buscar archivo en todo el sistema"
-      ansible.builtin.shell: |
-        echo "=== BUSCANDO ARCHIVO {{ pkg.src_file }} ==="
-        echo "1. Buscando en /tmp:"
-        find /tmp -name "{{ pkg.src_file }}" 2>/dev/null || echo "No encontrado en /tmp"
-        echo ""
-        echo "2. Buscando en /var/tmp:"
-        find /var/tmp -name "{{ pkg.src_file }}" 2>/dev/null || echo "No encontrado en /var/tmp"
-        echo ""
-        echo "3. Buscando en /home:"
-        find /home -name "{{ pkg.src_file }}" 2>/dev/null | head -5 || echo "No encontrado en /home"
-        echo ""
-        echo "4. Buscando en /opt:"
-        find /opt -name "{{ pkg.src_file }}" 2>/dev/null || echo "No encontrado en /opt"
-        echo ""
-        echo "5. Buscando en /usr/local:"
-        find /usr/local -name "{{ pkg.src_file }}" 2>/dev/null || echo "No encontrado en /usr/local"
-        echo ""
-        echo "6. Buscando en /root:"
-        find /root -name "{{ pkg.src_file }}" 2>/dev/null || echo "No encontrado en /root"
-        echo ""
-        echo "7. Buscando en /var/lib:"
-        find /var/lib -name "{{ pkg.src_file }}" 2>/dev/null | head -5 || echo "No encontrado en /var/lib"
-        echo "=== FIN BÚSQUEDA ==="
-      register: file_search
-      changed_when: false
-
-    - name: "Linux | Mostrar resultados de búsqueda"
-      ansible.builtin.debug:
-        var: file_search.stdout_lines
-
-    - name: "Linux | Verificar permisos del directorio destino"
-      ansible.builtin.shell: |
-        echo "=== VERIFICACIÓN DE DIRECTORIO DESTINO ==="
-        echo "Directorio: {{ dest_full_path | dirname }}"
-        echo "Permisos: $(ls -ld {{ dest_full_path | dirname }})"
-        echo "Espacio disponible: $(df -h {{ dest_full_path | dirname }} | tail -1)"
-        echo "Propietario: $(stat -c '%U' {{ dest_full_path | dirname }})"
-        echo "=== FIN VERIFICACIÓN ==="
-      register: dir_check
-      changed_when: false
-
-    - name: "Linux | Mostrar información del directorio"
-      ansible.builtin.debug:
-        var: dir_check.stdout_lines
-
-    - name: "Linux | Verificar procesos de limpieza de tmp"
-      ansible.builtin.shell: |
-        echo "=== VERIFICANDO SERVICIOS DE LIMPIEZA ==="
-        systemctl status systemd-tmpfiles-clean.timer 2>/dev/null | grep -E "Active|Trigger" || echo "No hay timer de limpieza"
-        echo ""
-        echo "Contenido de tmpfiles.d:"
-        ls -la /etc/tmpfiles.d/ 2>/dev/null || echo "No hay configuraciones"
-        cat /etc/tmpfiles.d/* 2>/dev/null | grep -i tmp || echo "No hay reglas de tmp"
-        echo ""
-        echo "Verificando tmp.conf:"
-        cat /usr/lib/tmpfiles.d/tmp.conf 2>/dev/null | grep -E "^[^#]" || echo "No se encuentra tmp.conf"
-        echo "=== FIN VERIFICACIÓN ==="
-      register: cleanup_check
-      changed_when: false
-
-    - name: "Linux | Mostrar información de limpieza"
-      ansible.builtin.debug:
-        var: cleanup_check.stdout_lines
+    - name: "Linux | Fallar si el archivo no se copió"
+      ansible.builtin.fail:
+        msg: "El archivo {{ dest_full_path }} no se copió correctamente"
+      when: not file_copied_check.stat.exists
 
     - name: "Linux | DIAGNÓSTICO - Listar contenido del directorio destino"
       ansible.builtin.shell: "ls -la {{ dest_full_path | dirname }} | grep -i {{ pkg.name }} || echo 'No hay archivos de {{ pkg.name }} en {{ dest_full_path | dirname }}'"
@@ -234,15 +217,8 @@
           - Código instalación: {{ install_result.rc }}
           - Output instalación: {{ install_result.stdout }}
           - Error instalación: {{ install_result.stderr }}
-          ========================================
-          BÚSQUEDA DE ARCHIVO:
-          {{ file_search.stdout }}
-          ========================================
-          VERIFICACIÓN DE DIRECTORIO:
-          {{ dir_check.stdout }}
-          ========================================
-          SERVICIOS DE LIMPIEZA:
-          {{ cleanup_check.stdout }}
+          - Output SCP: {{ scp_result.stdout }}
+          - Error SCP: {{ scp_result.stderr }}
           ========================================
         dest: "/tmp/installation_verification_{{ pkg.name }}_{{ ansible_date_time.epoch }}.log"
         mode: '0644'
@@ -258,7 +234,7 @@
           status: "{{ 'success' if validation_result.rc is defined and validation_result.rc == 0 else 'failed' }}"
           install_date: "{{ ansible_date_time.iso8601 }}"
           version_installed: "{{ installed_version | default('') }}"
-          copy_output: "{{ copy_result | default({}) }}"
+          copy_output: "{{ scp_result | default({}) }}"
           install_output: "{{ install_result.stdout | default('') }}"
           install_stderr: "{{ install_result.stderr | default('') }}"
           install_rc: "{{ install_result.rc | default('') }}"
