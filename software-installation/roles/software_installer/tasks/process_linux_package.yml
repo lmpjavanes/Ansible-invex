@@ -3,21 +3,40 @@
 
 - name: "Linux | Procesando {{ pkg.name }}"
   vars:
-    # Construir la ruta completa del archivo fuente en el nodo de control
+    # Ruta del archivo fuente en invd-ts-ansible
     source_full_path: "/software_repo/{{ pkg.src_file }}"
-    # Construir la ruta completa de destino en el servidor Linux
-    dest_full_path: "{{ pkg.dest_path | default('/tmp/') }}{{ pkg.src_file }}"
+    # Ruta temporal en el servidor destino
+    temp_dest_path: "/tmp/{{ pkg.src_file }}"
   block:
-    - name: "Linux | Copiar {{ pkg.src_file }} desde el nodo de control"
-      ansible.builtin.copy:
+    - name: "Linux | Verificar que el archivo existe en invd-ts-ansible"
+      ansible.builtin.stat:
+        path: "{{ source_full_path }}"
+      delegate_to: invd-ts-ansible
+      register: file_check
+      run_once: true  # Solo verificamos una vez
+
+    - name: "Linux | Detener si el archivo no existe"
+      ansible.builtin.fail:
+        msg: "El archivo {{ source_full_path }} no existe en invd-ts-ansible"
+      when: not file_check.stat.exists
+
+    - name: "Linux | Copiar {{ pkg.src_file }} desde invd-ts-ansible al servidor destino"
+      ansible.builtin.fetch:
         src: "{{ source_full_path }}"
-        dest: "{{ dest_full_path }}"
+        dest: "{{ temp_dest_path }}"
+        flat: yes
+      delegate_to: invd-ts-ansible
+      register: fetch_result
+
+    - name: "Linux | Mover el archivo a la ubicación final (si es necesario)"
+      ansible.builtin.copy:
+        src: "{{ temp_dest_path }}"
+        dest: "{{ pkg.dest_path | default('/tmp/') }}{{ pkg.src_file }}"
         mode: '0644'
-      delegate_to: "{{ inventory_hostname }}"
-      register: copy_result
+      when: pkg.dest_path is defined and pkg.dest_path != '/tmp/'
 
     - name: "Linux | Ejecutar comando de instalación"
-      ansible.builtin.shell: "{{ pkg.commands.install }} {{ dest_full_path }}"
+      ansible.builtin.shell: "{{ pkg.commands.install }} {{ pkg.dest_path | default('/tmp/') }}{{ pkg.src_file }}"
       args:
         executable: /bin/bash
       register: install_result
@@ -41,7 +60,7 @@
       changed_when: false
       when: pkg.commands.activation is defined
 
-    - name: "Linux | Iniciar servicio"
+    - name: "Linux | Iniciar servicio (si aplica)"
       ansible.builtin.shell: "{{ pkg.commands.start }}"
       args:
         executable: /bin/bash
@@ -50,7 +69,7 @@
       changed_when: false
       when: pkg.commands.start is defined
 
-    - name: "Linux | Verificar estatus del servicio"
+    - name: "Linux | Verificar estatus del servicio (si aplica)"
       ansible.builtin.shell: "{{ pkg.commands.status }}"
       args:
         executable: /bin/bash
@@ -64,6 +83,12 @@
         installed_version: "{{ validation_result.stdout | regex_search(pkg.version_regex, '\\1') | first | default('') }}"
       when: pkg.version_regex is defined
 
+    - name: "Linux | Limpiar archivo temporal"
+      ansible.builtin.file:
+        path: "{{ temp_dest_path }}"
+        state: absent
+      when: temp_dest_path != (pkg.dest_path | default('/tmp/') + pkg.src_file)
+
     - name: "Linux | Anexar resultado de este paquete a la lista del host"
       ansible.builtin.set_fact:
         host_installation_results: "{{ host_installation_results + [ pkg_result ] }}"
@@ -75,7 +100,7 @@
           status: "{{ 'success' if validation_result.rc == 0 else 'failed' }}"
           install_date: "{{ ansible_date_time.iso8601 }}"
           version_installed: "{{ installed_version | default('') }}"
-          copy_output: "{{ copy_result }}"
+          copy_output: "{{ fetch_result }}"
           install_output: "{{ install_result.stdout }}"
           validation_output: "{{ validation_result.stdout }}"
           activation_output: "{{ activation_result.stdout | default('') }}"
