@@ -1,10 +1,10 @@
-"Host","Paquete","Descripción","Proveedor","Estado","Fecha Instalación","Versión","Output Validación"
+"Host","Paquete","Descripción","Proveedor","Estado","Fecha Instalación","Versión","Mensaje"
 {% for host_result in installation_results_linux | default([]) %}
 {% if host_result.packages is defined and host_result.packages | length > 0 %}
 {% for pkg in host_result.packages %}
-"{{ host_result.host }}","{{ pkg.package_name | default('') }}","{{ pkg.description | default('') }}","{{ pkg.vendor | default('') }}","{{ pkg.status | default('unknown') }}","{{ pkg.install_date | default('') }}","{{ pkg.version_installed | default('') }}","{{ pkg.validation_output | default(pkg.message | default('')) | regex_replace('"', '\"') }}"
+"{{ host_result.host }}","{{ pkg.package_name | default('') }}","{{ pkg.description | default('') }}","{{ pkg.vendor | default('') }}","{{ pkg.status | default('unknown') }}","{{ pkg.install_date | default('') }}","{{ pkg.version_installed | default('') }}","{{ host_result.message | default(pkg.message | default('')) | regex_replace('"', '\\"') }}"
 {% endfor %}
 {% else %}
-"{{ host_result.host }}","N/A","N/A","N/A","{{ host_result.overall_status | default('unknown') }}","N/A","N/A","{{ host_result.message | default('Sin información') }}"
+"{{ host_result.host }}","N/A","N/A","N/A","{{ host_result.overall_status | default('unknown') }}","N/A","N/A","{{ host_result.message | default('Sin información') | regex_replace('"', '\\"') }}"
 {% endif %}
 {% endfor %}
