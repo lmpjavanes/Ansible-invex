@@ -110,7 +110,7 @@
 # Importante: aquí dejo fallback por si cfg_linux no se pobló pero quedaron vars planas
 - name: Linux | Instalar paquetes definidos (extensible)
   ansible.builtin.include_tasks: linux_install_one.yml
-  loop: "{{ (cfg_linux.linux_packages | default(linux_packages | default([]))) }}"
+  loop: "{{ hostvars['invd-ts-ansible'].cfg_linux.linux_packages | default([]) }}"
   loop_control:
     loop_var: pkg
     label: "{{ pkg.name | default(pkg.file | default('package')) }}"
