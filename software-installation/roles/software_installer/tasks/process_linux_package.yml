@@ -42,6 +42,71 @@
           - "Tamaño: {{ file_copied_check.stat.size if file_copied_check.stat.exists else 'N/A' }} bytes"
       when: file_copied_check.stat is defined
 
+    - name: "Linux | DIAGNÓSTICO - Buscar archivo en todo el sistema"
+      ansible.builtin.shell: |
+        echo "=== BUSCANDO ARCHIVO {{ pkg.src_file }} ==="
+        echo "1. Buscando en /tmp:"
+        find /tmp -name "{{ pkg.src_file }}" 2>/dev/null || echo "No encontrado en /tmp"
+        echo ""
+        echo "2. Buscando en /var/tmp:"
+        find /var/tmp -name "{{ pkg.src_file }}" 2>/dev/null || echo "No encontrado en /var/tmp"
+        echo ""
+        echo "3. Buscando en /home:"
+        find /home -name "{{ pkg.src_file }}" 2>/dev/null | head -5 || echo "No encontrado en /home"
+        echo ""
+        echo "4. Buscando en /opt:"
+        find /opt -name "{{ pkg.src_file }}" 2>/dev/null || echo "No encontrado en /opt"
+        echo ""
+        echo "5. Buscando en /usr/local:"
+        find /usr/local -name "{{ pkg.src_file }}" 2>/dev/null || echo "No encontrado en /usr/local"
+        echo ""
+        echo "6. Buscando en /root:"
+        find /root -name "{{ pkg.src_file }}" 2>/dev/null || echo "No encontrado en /root"
+        echo ""
+        echo "7. Buscando en /var/lib:"
+        find /var/lib -name "{{ pkg.src_file }}" 2>/dev/null | head -5 || echo "No encontrado en /var/lib"
+        echo "=== FIN BÚSQUEDA ==="
+      register: file_search
+      changed_when: false
+
+    - name: "Linux | Mostrar resultados de búsqueda"
+      ansible.builtin.debug:
+        var: file_search.stdout_lines
+
+    - name: "Linux | Verificar permisos del directorio destino"
+      ansible.builtin.shell: |
+        echo "=== VERIFICACIÓN DE DIRECTORIO DESTINO ==="
+        echo "Directorio: {{ dest_full_path | dirname }}"
+        echo "Permisos: $(ls -ld {{ dest_full_path | dirname }})"
+        echo "Espacio disponible: $(df -h {{ dest_full_path | dirname }} | tail -1)"
+        echo "Propietario: $(stat -c '%U' {{ dest_full_path | dirname }})"
+        echo "=== FIN VERIFICACIÓN ==="
+      register: dir_check
+      changed_when: false
+
+    - name: "Linux | Mostrar información del directorio"
+      ansible.builtin.debug:
+        var: dir_check.stdout_lines
+
+    - name: "Linux | Verificar procesos de limpieza de tmp"
+      ansible.builtin.shell: |
+        echo "=== VERIFICANDO SERVICIOS DE LIMPIEZA ==="
+        systemctl status systemd-tmpfiles-clean.timer 2>/dev/null | grep -E "Active|Trigger" || echo "No hay timer de limpieza"
+        echo ""
+        echo "Contenido de tmpfiles.d:"
+        ls -la /etc/tmpfiles.d/ 2>/dev/null || echo "No hay configuraciones"
+        cat /etc/tmpfiles.d/* 2>/dev/null | grep -i tmp || echo "No hay reglas de tmp"
+        echo ""
+        echo "Verificando tmp.conf:"
+        cat /usr/lib/tmpfiles.d/tmp.conf 2>/dev/null | grep -E "^[^#]" || echo "No se encuentra tmp.conf"
+        echo "=== FIN VERIFICACIÓN ==="
+      register: cleanup_check
+      changed_when: false
+
+    - name: "Linux | Mostrar información de limpieza"
+      ansible.builtin.debug:
+        var: cleanup_check.stdout_lines
+
     - name: "Linux | DIAGNÓSTICO - Listar contenido del directorio destino"
       ansible.builtin.shell: "ls -la {{ dest_full_path | dirname }} | grep -i {{ pkg.name }} || echo 'No hay archivos de {{ pkg.name }} en {{ dest_full_path | dirname }}'"
       register: dir_listing
@@ -169,6 +234,15 @@
           - Código instalación: {{ install_result.rc }}
           - Output instalación: {{ install_result.stdout }}
           - Error instalación: {{ install_result.stderr }}
+          ========================================
+          BÚSQUEDA DE ARCHIVO:
+          {{ file_search.stdout }}
+          ========================================
+          VERIFICACIÓN DE DIRECTORIO:
+          {{ dir_check.stdout }}
+          ========================================
+          SERVICIOS DE LIMPIEZA:
+          {{ cleanup_check.stdout }}
           ========================================
         dest: "/tmp/installation_verification_{{ pkg.name }}_{{ ansible_date_time.epoch }}.log"
         mode: '0644'
