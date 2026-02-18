@@ -25,10 +25,12 @@
 # =========================
 # Linux
 # =========================
-- name: Linux | Cargar catalogo de paquetes (vars)
+- name: Linux | Cargar catalogo de paquetes (vars) (desde el control node)
   ansible.builtin.include_vars:
     file: "{{ role_path }}/vars/packages_linux.yml"
     name: cfg_linux
+  delegate_to: invd-ts-ansible
+  run_once: true
   when: os_family_safe != 'Windows'
 
 # ---- DEBUGS DIAGNOSTICO LINUX (START) ----
