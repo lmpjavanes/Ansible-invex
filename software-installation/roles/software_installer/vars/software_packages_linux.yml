@@ -23,36 +23,21 @@
 #    version_regex: "[nombre]-(\\d+.*)"
 
 linux_packages:
-  # Paquete: htop
-  - name: "htop"
-    description: "Visor interactivo de procesos para Linux"
-    vendor: "htop.dev"
-    src_file: "htop-3.3.0-1.el9.x86_64.rpm"
-    dest_path: "/tmp/"
-    package_type: "rpm"
-    # Dependencias del paquete (se instalarán automáticamente)
-    dependencies:
-      - "hwloc"
-      - "ncurses"
-    commands:
-      install: "rpm -ivh"
-      post_install_validation: "rpm -qa | grep -i htop"
-    version_regex: "htop-(\\d+\\.\\d+\\.\\d+)"
 
   # Paquete: SentinelAgent (ejemplo para futuro)
-  # - name: "SentinelAgent"
-  #   description: "Agente de seguridad SentinelOne"
-  #   vendor: "SentinelOne"
-  #   src_file: "SentinelAgent_Linux_x86_64_v25_1_3_6.rpm"
-  #   dest_path: "/home/{{ ansible_user }}/"
-  #   package_type: "rpm"
-  #   dependencies:
-  #     - "glibc"
-  #     - "libstdc++"
-  #   commands:
-  #     install: "rpm -ivh"
-  #     post_install_validation: "rpm -qa | grep -i SentinelAgent"
-  #     activation: "/opt/sentinelone/bin/sentinelctl management token set {{ sentinelone_token }}"
-  #     start: "/opt/sentinelone/bin/sentinelctl control start"
-  #     status: "/opt/sentinelone/bin/sentinelctl control status"
-  #   version_regex: "SentinelAgent-(\\d+.*)"
+  - name: "SentinelAgent"
+    description: "Agente de seguridad SentinelOne"
+    vendor: "SentinelOne"
+    src_file: "SentinelAgent_Linux_x86_64_v25_1_3_6.rpm"
+    dest_path: "/home/{{ ansible_user }}/"
+    package_type: "rpm"
+    dependencies:
+      - "glibc"
+      - "libstdc++"
+    commands:
+      install: "rpm -ivh"
+      post_install_validation: "rpm -qa | grep -i SentinelAgent"
+      activation: "/opt/sentinelone/bin/sentinelctl management token set {{ sentinelone_token }}"
+      start: "/opt/sentinelone/bin/sentinelctl control start"
+      status: "/opt/sentinelone/bin/sentinelctl control status"
+    version_regex: "SentinelAgent-(\\d+.*)"
