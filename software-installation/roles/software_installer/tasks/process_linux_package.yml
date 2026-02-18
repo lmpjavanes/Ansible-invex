@@ -25,6 +25,7 @@
         src: "{{ source_full_path }}"
         dest: "{{ dest_full_path }}"
         mode: '0644'
+        remote_src: yes  # ¡ESTO ES CLAVE! Indica que el src está en el servidor remoto (invd-ts-ansible)
       delegate_to: invd-ts-ansible
       register: copy_result
 
