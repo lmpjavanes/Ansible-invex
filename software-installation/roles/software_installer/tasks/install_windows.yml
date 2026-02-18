@@ -1,0 +1,92 @@
+---
+# roles/software_installer/tasks/install_windows.yml
+
+- name: "Windows | Cargar configuración de paquetes"
+  ansible.builtin.include_vars:
+    file: software_packages_windows.yml
+    name: win_config
+
+- name: "Windows | Inicializar lista de resultados para este host"
+  ansible.builtin.set_fact:
+    host_installation_results: []
+
+- name: "Windows | Crear directorio de destino si no existe"
+  ansible.windows.win_file:
+    path: "{{ win_config.windows_dest_path }}"
+    state: directory
+
+- name: "Windows | Copiar archivos necesarios desde el NFS"
+  ansible.windows.win_copy:
+    src: "{{ win_config.windows_software_source }}\\{{ item }}"
+    dest: "{{ win_config.windows_dest_path }}"
+    remote_src: yes
+  loop: "{{ win_config.windows_files_to_copy }}"
+  register: copy_files_result
+
+- name: "Windows | Determinar el script de instalación según el grupo"
+  ansible.builtin.set_fact:
+    install_script: >-
+      {% if 'PROD' in group_names %}
+      {{ win_config.windows_dest_path }}install_ncpa_prod.bat
+      {% elif 'DRP' in group_names %}
+      {{ win_config.windows_dest_path }}install_ncpa_drp.bat
+      {% else %}
+      ""
+      {% endif %}
+
+- name: "Windows | Ejecutar script de instalación (si se determinó uno)"
+  ansible.windows.win_command: "{{ install_script }}"
+  register: script_execution
+  failed_when: false
+  changed_when: false
+  when: install_script != ""
+
+- name: "Windows | Validar instalación (existencia de ncpa.exe)"
+  ansible.windows.win_stat:
+    path: "C:\\Program Files\\Nagios\\NCPA\\ncpa.exe"
+  register: validation_stat
+
+- name: "Windows | Obtener versión del ejecutable"
+  ansible.windows.win_shell: "{{ win_config.ncpa_install.version_command }}"
+  register: version_result
+  failed_when: false
+  changed_when: false
+  when: validation_stat.stat.exists
+
+- name: "Windows | Verificar estado del servicio NCPA"
+  ansible.windows.win_shell: "{{ win_config.ncpa_install.status_command }}"
+  register: service_status
+  failed_when: false
+  changed_when: false
+
+- name: "Windows | Construir resultado de instalación"
+  ansible.builtin.set_fact:
+    host_installation_results: "{{ host_installation_results + [ pkg_result ] }}"
+  vars:
+    pkg_result:
+      package_name: "{{ win_config.ncpa_install.package_name }}"
+      description: "{{ win_config.ncpa_install.description }}"
+      vendor: "{{ win_config.ncpa_install.vendor }}"
+      status: "{{ 'success' if validation_stat.stat.exists else 'failed' }}"
+      install_date: "{{ ansible_date_time.iso8601 }}"
+      version_installed: "{{ version_result.stdout | default('') | trim }}"
+      service_status: "{{ service_status.stdout | default('N/A') | trim }}"
+      copy_output: "{{ copy_files_result }}"
+      script_output: "{{ script_execution.stdout | default('') }}"
+
+- name: "Windows | Determinar estado general del host"
+  ansible.builtin.set_fact:
+    overall_host_status: >-
+      {% set failed_states = host_installation_results | selectattr('status', 'equalto', 'failed') | list %}
+      {% if failed_states | length > 0 %}failed
+      {% else %}success
+      {% endif %}
+
+- name: "Windows | Construir resultado final para el host"
+  ansible.builtin.set_fact:
+    software_installation_result:
+      host: "{{ inventory_hostname }}"
+      os_family: "Windows"
+      overall_status: "{{ overall_host_status }}"
+      packages: "{{ host_installation_results }}"
+      message: "Procesado paquete NCPA."

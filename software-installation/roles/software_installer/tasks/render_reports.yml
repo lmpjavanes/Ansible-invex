@@ -1,0 +1,65 @@
+---
+# roles/software_installer/tasks/render_reports.yml
+
+- name: "Validar que report_dir esté definido"
+  ansible.builtin.assert:
+    that:
+      - report_dir is defined
+      - (report_dir | string | length) > 0
+    fail_msg: "La variable 'report_dir' no está definida. Defínela en el play de control antes de renderizar."
+
+- name: "Crear directorio del reporte en invd-ts-ansible (si no existe)"
+  ansible.builtin.file:
+    path: "{{ report_dir }}"
+    state: directory
+    mode: "0755"
+  delegate_to: invd-ts-ansible
+  run_once: true
+
+- name: "Asegurar que las variables de resultados existen"
+  ansible.builtin.set_fact:
+    installation_results_linux: "{{ installation_results_linux | default([]) }}"
+    installation_results_windows: "{{ installation_results_windows | default([]) }}"
+  run_once: true
+
+- name: "Reporte CSV (Linux)"
+  ansible.builtin.template:
+    src: linux_installation_report.csv.j2
+    dest: "{{ report_dir }}/linux_installation_report.csv"
+    mode: "0644"
+  delegate_to: invd-ts-ansible
+  run_once: true
+
+- name: "Reporte HTML (Linux)"
+  ansible.builtin.template:
+    src: linux_installation_report.html.j2
+    dest: "{{ report_dir }}/linux_installation_report.html"
+    mode: "0644"
+  delegate_to: invd-ts-ansible
+  run_once: true
+
+- name: "Reporte CSV (Windows)"
+  ansible.builtin.template:
+    src: windows_installation_report.csv.j2
+    dest: "{{ report_dir }}/windows_installation_report.csv"
+    mode: "0644"
+  delegate_to: invd-ts-ansible
+  run_once: true
+
+- name: "Reporte HTML (Windows)"
+  ansible.builtin.template:
+    src: windows_installation_report.html.j2
+    dest: "{{ report_dir }}/windows_installation_report.html"
+    mode: "0644"
+  delegate_to: invd-ts-ansible
+  run_once: true
+
+- name: "Mostrar rutas de los reportes generados"
+  ansible.builtin.debug:
+    msg:
+      - "Reportes generados en: {{ report_dir }}"
+      - "Linux CSV : {{ report_dir }}/linux_installation_report.csv"
+      - "Linux HTML: {{ report_dir }}/linux_installation_report.html"
+      - "Windows CSV : {{ report_dir }}/windows_installation_report.csv"
+      - "Windows HTML: {{ report_dir }}/windows_installation_report.html"
+  run_once: true

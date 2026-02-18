@@ -1,0 +1,296 @@
+{% raw %}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Reporte de Instalación de Software - Windows</title>
+    <style>
+        body { 
+            font-family: 'Segoe UI', Arial, sans-serif; 
+            margin: 30px; 
+            background-color: #f5f5f5;
+        }
+        h1 { 
+            color: #2c3e50; 
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        .subtitle {
+            color: #7f8c8d;
+            font-size: 0.9em;
+            margin-top: -5px;
+            margin-bottom: 25px;
+        }
+        table { 
+            border-collapse: collapse; 
+            width: 100%; 
+            margin-bottom: 30px; 
+            background-color: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        th, td { 
+            border: 1px solid #ddd; 
+            padding: 12px; 
+            text-align: left; 
+            vertical-align: top;
+        }
+        th { 
+            background-color: #3498db; 
+            color: white;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.85em;
+            letter-spacing: 0.5px;
+        }
+        tr:nth-child(even) { 
+            background-color: #f8f9fa; 
+        }
+        tr:hover {
+            background-color: #f1f9ff;
+        }
+        .success { 
+            background-color: #d4edda; 
+            color: #155724; 
+            font-weight: bold;
+        }
+        .failed { 
+            background-color: #f8d7da; 
+            color: #721c24; 
+            font-weight: bold;
+        }
+        .unreachable { 
+            background-color: #fff3cd; 
+            color: #856404; 
+            font-weight: bold;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 0.85em;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .status-success {
+            background-color: #28a745;
+            color: white;
+        }
+        .status-failed {
+            background-color: #dc3545;
+            color: white;
+        }
+        .status-unreachable {
+            background-color: #ffc107;
+            color: #212529;
+        }
+        details {
+            cursor: pointer;
+            padding: 5px;
+            background-color: #f8f9fa;
+            border-radius: 3px;
+        }
+        details summary {
+            font-weight: 600;
+            color: #495057;
+        }
+        details pre {
+            background-color: #2d2d2d;
+            color: #f8f8f2;
+            padding: 10px;
+            border-radius: 3px;
+            overflow-x: auto;
+            font-size: 0.85em;
+            margin-top: 10px;
+            margin-bottom: 5px;
+        }
+        .footer {
+            margin-top: 30px;
+            padding-top: 15px;
+            border-top: 1px solid #dee2e6;
+            color: #6c757d;
+            font-size: 0.85em;
+            text-align: right;
+        }
+        .summary-stats {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .stat-box {
+            flex: 1;
+            background-color: white;
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #3498db;
+        }
+        .stat-label {
+            color: #6c757d;
+            text-transform: uppercase;
+            font-size: 0.8em;
+            letter-spacing: 0.5px;
+        }
+        .environment-badge {
+            display: inline-block;
+            padding: 2px 6px;
+            background-color: #6c757d;
+            color: white;
+            border-radius: 3px;
+            font-size: 0.75em;
+            margin-left: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>📊 Reporte de Instalación de Software - Windows</h1>
+    <div class="subtitle">
+        Fecha y hora del reporte: {{ ansible_date_time.date }} {{ ansible_date_time.time }} | 
+        Generado desde: {{ ansible_hostname }}
+    </div>
+
+    {# Calcular estadísticas #}
+    {% set total_hosts = installation_results_windows | length %}
+    {% set successful_hosts = installation_results_windows | selectattr('overall_status', 'equalto', 'success') | list | length %}
+    {% set failed_hosts = installation_results_windows | selectattr('overall_status', 'equalto', 'failed') | list | length %}
+    {% set unreachable_hosts = installation_results_windows | selectattr('overall_status', 'equalto', 'unreachable') | list | length %}
+
+    <div class="summary-stats">
+        <div class="stat-box">
+            <div class="stat-number">{{ total_hosts }}</div>
+            <div class="stat-label">Total Servidores Windows</div>
+        </div>
+        <div class="stat-box" style="background-color: #d4edda;">
+            <div class="stat-number" style="color: #28a745;">{{ successful_hosts }}</div>
+            <div class="stat-label">Instalaciones Exitosas</div>
+        </div>
+        <div class="stat-box" style="background-color: #f8d7da;">
+            <div class="stat-number" style="color: #dc3545;">{{ failed_hosts }}</div>
+            <div class="stat-label">Instalaciones Fallidas</div>
+        </div>
+        <div class="stat-box" style="background-color: #fff3cd;">
+            <div class="stat-number" style="color: #ffc107;">{{ unreachable_hosts }}</div>
+            <div class="stat-label">Servidores No Alcanzables</div>
+        </div>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Host / Ambiente</th>
+                <th>Paquete</th>
+                <th>Descripción</th>
+                <th>Proveedor</th>
+                <th>Estado</th>
+                <th>Fecha Instalación</th>
+                <th>Versión</th>
+                <th>Estado del Servicio</th>
+                <th>Detalles de Ejecución</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for host_result in installation_results_windows %}
+            {# Determinar el ambiente (PROD/DRP) basado en el nombre del host o grupos #}
+            {% set environment = 'PROD' if 'PROD' in host_result.host or 'prd' in host_result.host|lower else 'DRP' %}
+            
+            {% if host_result.packages | length > 0 %}
+                {% for pkg in host_result.packages %}
+                <tr class="{{ host_result.overall_status }}">
+                    <td>
+                        <strong>{{ host_result.host }}</strong>
+                        <span class="environment-badge">{{ environment }}</span>
+                        {% if host_result.message %}
+                        <br><small style="color: #6c757d;">{{ host_result.message }}</small>
+                        {% endif %}
+                    </td>
+                    <td><strong>{{ pkg.package_name }}</strong></td>
+                    <td>{{ pkg.description }}</td>
+                    <td>{{ pkg.vendor }}</td>
+                    <td>
+                        <span class="status-badge status-{{ host_result.overall_status }}">
+                            {{ host_result.overall_status | upper }}
+                        </span>
+                    </td>
+                    <td>{{ pkg.install_date | replace('T', ' ') | truncate(19, true, '') }}</td>
+                    <td>
+                        {% if pkg.version_installed %}
+                            <code>{{ pkg.version_installed }}</code>
+                        {% else %}
+                            <span style="color: #999;">N/A</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if pkg.service_status and pkg.service_status != 'N/A' %}
+                            <span style="color: {% if 'Running' in pkg.service_status %}#28a745{% else %}#dc3545{% endif %};">
+                                ⚙️ {{ pkg.service_status }}
+                            </span>
+                        {% else %}
+                            <span style="color: #999;">⏸️ No aplica</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <details>
+                            <summary>Ver comandos ejecutados</summary>
+                            <pre><strong>📋 Script de instalación ejecutado:</strong>
+{{ pkg.script_output | default('No output disponible') | truncate(500, true, '...') }}
+
+<strong>📁 Archivos copiados:</strong>
+{% if pkg.copy_output %}
+  {% for result in pkg.copy_output.results | default([]) %}
+  • {{ result.dest | default('Archivo') }}: {{ '✅' if result.changed else '⏭️' }} 
+  {% endfor %}
+{% else %}
+  • Información de copia no disponible
+{% endif %}
+
+<strong>✅ Comando de validación:</strong>
+{{ pkg.validation_output | default('No ejecutado') }}
+
+<strong>🔍 Estado del servicio:</strong>
+{{ pkg.service_status | default('No disponible') }}
+                            </pre>
+                        </details>
+                    </td>
+                </tr>
+                {% endfor %}
+            {% else %}
+                <tr class="{{ host_result.overall_status }}">
+                    <td>
+                        <strong>{{ host_result.host }}</strong>
+                        <span class="environment-badge">{{ environment }}</span>
+                    </td>
+                    <td colspan="8" style="text-align: center; font-style: italic;">
+                        {% if host_result.overall_status == 'unreachable' %}
+                            🚫 {{ host_result.message | default('Host no alcanzable') }}
+                        {% else %}
+                            ⚠️ {{ host_result.message | default('No se procesaron paquetes') }}
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endif %}
+        {% else %}
+            <tr>
+                <td colspan="9" style="text-align: center; padding: 40px; color: #999;">
+                    📭 No hay datos de servidores Windows para mostrar
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="footer">
+        <strong>Resumen de instalación Windows:</strong><br>
+        • Total de paquetes instalados: {{ installation_results_windows | map(attribute='packages') | map('length') | sum }}<br>
+        • Hosts exitosos: {{ successful_hosts }} | Fallidos: {{ failed_hosts }} | No alcanzables: {{ unreachable_hosts }}<br>
+        • Ruta de archivos fuente: \\kirov01\SISTEMASOPERATIVOS_WINDOWSLINUX\Software\Agente Nagios\Nagios<br>
+        • Ruta de instalación: C:\Program Files\Nagios\NCPA<br>
+        • Generado automáticamente por Ansible Automation Platform
+    </div>
+</body>
+</html>
+{% endraw %}

@@ -1,0 +1,11 @@
+{% raw %}
+"Host","Paquete","Descripción","Proveedor","Estado","Fecha Instalación","Versión","Output Validación"
+{% for host_result in installation_results_linux %}
+{% for pkg in host_result.packages %}
+"{{ host_result.host }}","{{ pkg.package_name }}","{{ pkg.description }}","{{ pkg.vendor }}","{{ pkg.status }}","{{ pkg.install_date }}","{{ pkg.version_installed }}","{{ pkg.validation_output | regex_replace('"', '\"') | default('') }}"
+{% endfor %}
+{% if host_result.packages | length == 0 %}
+"{{ host_result.host }}","N/A","N/A","N/A","{{ host_result.overall_status }}","N/A","N/A","{{ host_result.message }}"
+{% endif %}
+{% endfor %}
+{% endraw %}

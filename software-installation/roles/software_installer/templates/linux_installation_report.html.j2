@@ -1,0 +1,68 @@
+{% raw %}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Reporte de Instalación de Software - Linux</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h1 { color: #333; }
+        table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        .success { background-color: #d4edda; color: #155724; }
+        .failed { background-color: #f8d7da; color: #721c24; }
+        .unreachable { background-color: #fff3cd; color: #856404; }
+    </style>
+</head>
+<body>
+    <h1>Reporte de Instalación de Software - Linux</h1>
+    <p>Fecha y hora del reporte: {{ ansible_date_time.iso8601 }}</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Host</th>
+                <th>Paquete</th>
+                <th>Descripción</th>
+                <th>Proveedor</th>
+                <th>Estado</th>
+                <th>Fecha Instalación</th>
+                <th>Versión</th>
+                <th>Output Comandos</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for host_result in installation_results_linux %}
+            {% if host_result.packages | length > 0 %}
+                {% for pkg in host_result.packages %}
+                <tr class="{{ pkg.status }}">
+                    <td>{{ host_result.host }}</td>
+                    <td>{{ pkg.package_name }}</td>
+                    <td>{{ pkg.description }}</td>
+                    <td>{{ pkg.vendor }}</td>
+                    <td>{{ pkg.status | upper }}</td>
+                    <td>{{ pkg.install_date }}</td>
+                    <td>{{ pkg.version_installed }}</td>
+                    <td>
+                        <details>
+                            <summary>Ver detalles</summary>
+                            <pre><small>Validación: {{ pkg.validation_output | default('N/A') }}</small></pre>
+                            <pre><small>Activación: {{ pkg.activation_output | default('N/A') }}</small></pre>
+                            <pre><small>Status: {{ pkg.status_output | default('N/A') }}</small></pre>
+                        </details>
+                    </td>
+                </tr>
+                {% endfor %}
+            {% else %}
+                <tr class="{{ host_result.overall_status }}">
+                    <td>{{ host_result.host }}</td>
+                    <td colspan="7" style="text-align: center;">{{ host_result.message }}</td>
+                </tr>
+            {% endif %}
+        {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>
+{% endraw %}

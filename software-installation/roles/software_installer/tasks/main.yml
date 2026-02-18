@@ -1,0 +1,38 @@
+---
+# roles/software_installer/tasks/main.yml
+
+- name: "Definir facts iniciales para el resultado"
+  ansible.builtin.set_fact:
+    software_installation_result:
+      host: "{{ inventory_hostname }}"
+      os_family: "{{ ansible_os_family | default('unknown') }}"
+      overall_status: "pending"
+      packages: []
+      message: ""
+
+- name: "Detectar hosts no disponibles (facts no recopilados)"
+  ansible.builtin.set_fact:
+    host_unreachable: true
+  when: ansible_os_family is not defined
+
+- name: "Marcar como unreachable y finalizar si el host no está disponible"
+  ansible.builtin.set_fact:
+    software_installation_result:
+      host: "{{ inventory_hostname }}"
+      os_family: "unknown"
+      overall_status: "unreachable"
+      packages: []
+      message: "Host no alcanzable. No se pudo recopilar facts."
+  when: host_unreachable | default(false)
+
+- name: "Finalizar ejecución para hosts no disponibles"
+  ansible.builtin.meta: end_host
+  when: host_unreachable | default(false)
+
+- name: "Incluir tareas de instalación para Linux"
+  ansible.builtin.include_tasks: install_linux.yml
+  when: ansible_os_family != "Windows"
+
+- name: "Incluir tareas de instalación para Windows"
+  ansible.builtin.include_tasks: install_windows.yml
+  when: ansible_os_family == "Windows"

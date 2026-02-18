@@ -1,0 +1,35 @@
+---
+# roles/software_installer/tasks/install_linux.yml
+
+- name: "Linux | Cargar lista de paquetes desde vars"
+  ansible.builtin.include_vars:
+    file: software_packages_linux.yml
+    name: linux_pkg_config
+
+- name: "Linux | Inicializar lista de resultados para este host"
+  ansible.builtin.set_fact:
+    host_installation_results: []
+
+- name: "Linux | Procesar cada paquete definido"
+  ansible.builtin.include_tasks: process_linux_package.yml
+  loop: "{{ linux_pkg_config.linux_packages }}"
+  loop_control:
+    loop_var: pkg
+    label: "Instalando {{ pkg.name }}"
+
+- name: "Linux | Determinar estado general del host"
+  ansible.builtin.set_fact:
+    overall_host_status: >-
+      {% set failed_states = host_installation_results | selectattr('status', 'equalto', 'failed') | list %}
+      {% if failed_states | length > 0 %}failed
+      {% else %}success
+      {% endif %}
+
+- name: "Linux | Construir resultado final para el host"
+  ansible.builtin.set_fact:
+    software_installation_result:
+      host: "{{ inventory_hostname }}"
+      os_family: "Linux"
+      overall_status: "{{ overall_host_status }}"
+      packages: "{{ host_installation_results }}"
+      message: "Procesados {{ host_installation_results | length }} paquetes."

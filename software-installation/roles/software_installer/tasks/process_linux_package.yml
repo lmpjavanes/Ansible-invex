@@ -1,0 +1,96 @@
+---
+# roles/software_installer/tasks/process_linux_package.yml
+
+- name: "Linux | Procesando {{ pkg.name }}"
+  vars:
+    # Construir la ruta completa del archivo fuente en el nodo de control
+    source_full_path: "/software_repo/{{ pkg.src_file }}"
+    # Construir la ruta completa de destino en el servidor Linux
+    dest_full_path: "{{ pkg.dest_path | default('/tmp/') }}{{ pkg.src_file }}"
+  block:
+    - name: "Linux | Copiar {{ pkg.src_file }} desde el nodo de control"
+      ansible.builtin.copy:
+        src: "{{ source_full_path }}"
+        dest: "{{ dest_full_path }}"
+        mode: '0644'
+      delegate_to: "{{ inventory_hostname }}"
+      register: copy_result
+
+    - name: "Linux | Ejecutar comando de instalación"
+      ansible.builtin.shell: "{{ pkg.commands.install }} {{ dest_full_path }}"
+      args:
+        executable: /bin/bash
+      register: install_result
+      failed_when: false
+      changed_when: false
+
+    - name: "Linux | Ejecutar validación post-instalación"
+      ansible.builtin.shell: "{{ pkg.commands.post_install_validation }}"
+      args:
+        executable: /bin/bash
+      register: validation_result
+      failed_when: false
+      changed_when: false
+
+    - name: "Linux | Ejecutar activación (si aplica)"
+      ansible.builtin.shell: "{{ pkg.commands.activation }}"
+      args:
+        executable: /bin/bash
+      register: activation_result
+      failed_when: false
+      changed_when: false
+      when: pkg.commands.activation is defined
+
+    - name: "Linux | Iniciar servicio"
+      ansible.builtin.shell: "{{ pkg.commands.start }}"
+      args:
+        executable: /bin/bash
+      register: start_result
+      failed_when: false
+      changed_when: false
+      when: pkg.commands.start is defined
+
+    - name: "Linux | Verificar estatus del servicio"
+      ansible.builtin.shell: "{{ pkg.commands.status }}"
+      args:
+        executable: /bin/bash
+      register: status_result
+      failed_when: false
+      changed_when: false
+      when: pkg.commands.status is defined
+
+    - name: "Linux | Extraer versión instalada (usando regex)"
+      ansible.builtin.set_fact:
+        installed_version: "{{ validation_result.stdout | regex_search(pkg.version_regex, '\\1') | first | default('') }}"
+      when: pkg.version_regex is defined
+
+    - name: "Linux | Anexar resultado de este paquete a la lista del host"
+      ansible.builtin.set_fact:
+        host_installation_results: "{{ host_installation_results + [ pkg_result ] }}"
+      vars:
+        pkg_result:
+          package_name: "{{ pkg.name }}"
+          description: "{{ pkg.description | default('') }}"
+          vendor: "{{ pkg.vendor | default('') }}"
+          status: "{{ 'success' if validation_result.rc == 0 else 'failed' }}"
+          install_date: "{{ ansible_date_time.iso8601 }}"
+          version_installed: "{{ installed_version | default('') }}"
+          copy_output: "{{ copy_result }}"
+          install_output: "{{ install_result.stdout }}"
+          validation_output: "{{ validation_result.stdout }}"
+          activation_output: "{{ activation_result.stdout | default('') }}"
+          status_output: "{{ status_result.stdout | default('') }}"
+
+  rescue:
+    - name: "Linux | Error en el bloque de instalación de {{ pkg.name }}"
+      ansible.builtin.set_fact:
+        host_installation_results: "{{ host_installation_results + [ error_result ] }}"
+      vars:
+        error_result:
+          package_name: "{{ pkg.name }}"
+          description: "{{ pkg.description | default('') }}"
+          vendor: "{{ pkg.vendor | default('') }}"
+          status: "failed"
+          install_date: "{{ ansible_date_time.iso8601 }}"
+          version_installed: ""
+          message: "Error crítico durante la instalación: {{ ansible_failed_result.msg | default('Error desconocido') }}"

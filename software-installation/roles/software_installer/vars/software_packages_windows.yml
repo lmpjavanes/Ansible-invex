@@ -1,0 +1,30 @@
+---
+# software_packages_windows.yml
+# Configuración para la instalación en Windows.
+
+# Ruta base en el NFS accesible desde los servidores Windows
+windows_software_source: "\\\\kirov01\\SISTEMASOPERATIVOS_WINDOWSLINUX\\Software\\Agente Nagios\\Nagios"
+
+# Archivos a copiar desde la fuente
+windows_files_to_copy:
+  - "ncpa.exe"
+  - "install_ncpa_prod.bat"
+  - "install_ncpa_drp.bat"
+
+# Ruta de destino en los servidores Windows
+windows_dest_path: "C:\\sys\\"
+
+# Configuración específica para el agente Nagios/NCPA
+ncpa_install:
+  description: "Agente de monitorización Nagios NCPA"
+  vendor: "Nagios"
+  # El nombre del ejecutable de instalación
+  installer: "ncpa.exe"
+  # El nombre del paquete para el reporte
+  package_name: "NCPA Agent"
+  # Comando para validar la instalación (ej. si el ejecutable principal existe)
+  validation_command: "Test-Path 'C:\\Program Files\\Nagios\\NCPA\\ncpa.exe'"
+  # Comando para obtener la versión (ej. leyendo el producto de Windows)
+  version_command: "(Get-Item 'C:\\Program Files\\Nagios\\NCPA\\ncpa.exe').VersionInfo.ProductVersion"
+  # Comando para verificar el estado del servicio (si aplica)
+  status_command: "Get-Service -Name ncpasvc -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Status"
