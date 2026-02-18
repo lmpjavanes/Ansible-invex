@@ -3,26 +3,17 @@
 # Lista de paquetes a instalar en servidores Linux.
 
 linux_packages:
-  - name: "SentinelAgent"
-    description: "Agente de seguridad SentinelOne"
-    vendor: "SentinelOne"
-    # Archivo fuente en el repositorio central (invd-ts-ansible)
-    src_file: "SentinelAgent_Linux_x86_64_v25_1_3_6.rpm"
-    # Ruta de destino en el servidor Linux
-    dest_path: "/home/{{ ansible_user }}/"
-    # Tipo de paquete (rpm, deb, tar, etc.)
+  # Paquete 2: htop (nuevo)
+  - name: "htop"
+    description: "Visor interactivo de procesos para Linux"
+    vendor: "htop.dev"
+    src_file: "htop-3.3.0-1.el9.x86_64.rpm"
+    dest_path: "/tmp/"  # Ruta temporal para copiar el RPM
     package_type: "rpm"
-    # Comandos específicos para este paquete
     commands:
       install: "rpm -ivh"
-      # Nota: El nombre del archivo se concatenará automáticamente
-      post_install_validation: "rpm -qa | grep -i SentinelAgent"
-      activation: "/opt/sentinelone/bin/sentinelctl management token set Aqui_va_el_token"
-      start: "/opt/sentinelone/bin/sentinelctl control start"
-      status: "/opt/sentinelone/bin/sentinelctl control status"
-    # Regex para extraer la versión del comando de validación
-    version_regex: "SentinelAgent-(\\d+.*)\\.rpm"
-    # Nota: Puedes añadir más paquetes aquí abajo
-  # - name: "CrowdStrike"
-  #   src_file: "falcon-sensor-7.08.0-15406.el7.x86_64.rpm"
-  #   ... resto de configuración
+      post_install_validation: "rpm -qa | grep -i htop"
+      # htop no necesita activación, start ni status (es una herramienta, no servicio)
+      # Estos campos son opcionales, puedes omitirlos o dejarlos vacíos
+    version_regex: "htop-(\\d+\\.\\d+\\.\\d+)"
+    # Nota: Al no tener activation/start/status, el playbook omitirá esos pasos automáticamente
