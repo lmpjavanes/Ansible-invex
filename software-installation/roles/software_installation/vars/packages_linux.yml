@@ -18,6 +18,6 @@ linux_packages:
     # Opcional: metadata_cmd para forzar queryformat / parsing
     # metadata_cmd: "rpm -qip --queryformat '%{NAME}\n%{VERSION}-%{RELEASE}\n%{VENDOR}\n%{SUMMARY}\n%{DESCRIPTION}\n' "
   - name: htop
-    file: htop-3.2.2-1.el9.x86_64.rpm
+    file: htop-3.3.0-1.el9.x86_64.rpm
     install_cmd: "rpm -Uvh"
     validate_cmd: "rpm -qa | grep -i '^htop' || true"
