@@ -1,7 +1,5 @@
 ---
-# software_packages_linux.yml
 # Lista de paquetes a instalar en servidores Linux.
-# VERSIÓN FINAL CON DEPENDENCIAS
 
 linux_packages:
   # Paquete: htop
@@ -33,7 +31,7 @@ linux_packages:
   #   commands:
   #     install: "rpm -ivh"
   #     post_install_validation: "rpm -qa | grep -i SentinelAgent"
-  #     activation: "/opt/sentinelone/bin/sentinelctl management token set Aqui_va_el_token"
+  #     activation: "/opt/sentinelone/bin/sentinelctl management token set {{ sentinelone_token }}"
   #     start: "/opt/sentinelone/bin/sentinelctl control start"
   #     status: "/opt/sentinelone/bin/sentinelctl control status"
   #   version_regex: "SentinelAgent-(\\d+.*)"
