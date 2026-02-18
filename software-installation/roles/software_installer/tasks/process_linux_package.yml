@@ -106,9 +106,9 @@
       ansible.builtin.dnf:
         name: "{{ pkg.dependencies }}"
         state: present
+      become: true
       when: pkg.dependencies is defined and pkg.dependencies | length > 0
       register: deps_install
-      become: yes
 
     - name: "Linux | Mostrar resultado de instalación de dependencias"
       ansible.builtin.debug:
