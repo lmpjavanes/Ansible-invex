@@ -1,5 +1,6 @@
 ---
 # roles/software_installer/tasks/process_linux_package.yml
+# SOLUCIÓN DEFINITIVA: Usando fetch + copy para máxima confiabilidad
 
 - name: "Linux | Procesando {{ pkg.name }}"
   vars:
@@ -7,9 +8,12 @@
     source_full_path: "/software_repo/{{ pkg.src_file }}"
     # Ruta destino en el servidor Linux
     dest_full_path: "{{ pkg.dest_path | default('/tmp/') }}{{ pkg.src_file }}"
-    # IP de invd-ts-ansible (hardcodeada o desde variable)
-    source_server: "192.168.56.13"
+    # Ruta temporal en el nodo controlador
+    controller_temp_path: "/tmp/ansible_temp_{{ pkg.src_file }}"
   block:
+    # ============================================
+    # PASO 1: VERIFICACIÓN EN ORIGEN
+    # ============================================
     - name: "Linux | Verificar que el archivo existe en invd-ts-ansible"
       ansible.builtin.stat:
         path: "{{ source_full_path }}"
@@ -22,73 +26,56 @@
         msg: "El archivo {{ source_full_path }} no existe en invd-ts-ansible"
       when: not file_check.stat.exists
 
-    - name: "Linux | COPIAR ARCHIVO USANDO SCP CON TIMEOUT"
-      ansible.builtin.shell: |
-        set -x
-        echo "=== INICIANDO COPIA CON SCP ==="
-        echo "Origen: {{ source_server }}:{{ source_full_path }}"
-        echo "Destino: {{ dest_full_path }}"
-        
-        # Verificar conectividad primero (con timeout)
-        timeout 5 ping -c 1 {{ source_server }} > /dev/null 2>&1
-        if [ $? -ne 0 ]; then
-          echo "❌ No hay conectividad con {{ source_server }}"
-          exit 1
-        fi
-        
-        # Limpiar known_hosts para evitar problemas
-        ssh-keygen -f "/root/.ssh/known_hosts" -R "{{ source_server }}" 2>/dev/null || true
-        
-        # Copiar el archivo usando scp con timeout de 30 segundos
-        timeout 30 scp -v -o StrictHostKeyChecking=no \
-            -o ConnectTimeout=5 \
-            -o UserKnownHostsFile=/dev/null \
-            -o LogLevel=ERROR \
-            -o PasswordAuthentication=no \
-            {{ source_server }}:{{ source_full_path }} {{ dest_full_path }} 2>&1
-        
-        SCP_EXIT_CODE=$?
-        echo "Código de salida SCP: $SCP_EXIT_CODE"
-        
-        if [ $SCP_EXIT_CODE -eq 0 ]; then
-          echo "✅ Archivo copiado exitosamente"
-          # Verificar que el archivo existe después de la copia
-          if [ -f {{ dest_full_path }} ]; then
-            echo "✅ Verificación: archivo existe en destino"
-            echo "Tamaño: $(ls -lh {{ dest_full_path }} | awk '{print $5}')"
-          else
-            echo "❌ ERROR: Archivo no encontrado después de SCP"
-            exit 1
-          fi
-        elif [ $SCP_EXIT_CODE -eq 124 ]; then
-          echo "❌ TIMEOUT: SCP tardó más de 30 segundos"
-          exit 124
-        else
-          echo "❌ Error en SCP (código: $SCP_EXIT_CODE)"
-          exit $SCP_EXIT_CODE
-        fi
-        echo "=== FIN COPIA SCP ==="
-      args:
-        executable: /bin/bash
-      register: scp_result
-      changed_when: scp_result.rc == 0
-      failed_when: scp_result.rc != 0 and scp_result.rc != 124
-      async: 45  # Timeout de Ansible de 45 segundos
-      poll: 5    # Verificar cada 5 segundos
+    # ============================================
+    # PASO 2: FETCH - TRAER ARCHIVO AL NODO CONTROLADOR
+    # ============================================
+    - name: "Linux | FETCH - Traer archivo desde invd-ts-ansible al nodo controlador"
+      ansible.builtin.fetch:
+        src: "{{ source_full_path }}"
+        dest: "{{ controller_temp_path }}"
+        flat: yes
+      delegate_to: invd-ts-ansible
+      register: fetch_result
+      run_once: true  # Solo necesario una vez para todos los hosts
 
-    - name: "Linux | Mostrar resultado de SCP"
+    - name: "Linux | Verificar que el fetch fue exitoso"
+      ansible.builtin.stat:
+        path: "{{ controller_temp_path }}"
+      delegate_to: localhost
+      register: fetch_check
+      run_once: true
+
+    - name: "Linux | Mostrar información del fetch"
       ansible.builtin.debug:
         msg:
-          - "Código SCP: {{ scp_result.rc }}"
-          - "Output: {{ scp_result.stdout }}"
-          - "Error: {{ scp_result.stderr }}"
+          - "Archivo temporal en controlador: {{ controller_temp_path }}"
+          - "Existe: {{ fetch_check.stat.exists }}"
+          - "Tamaño: {{ fetch_check.stat.size if fetch_check.stat.exists else 'N/A' }} bytes"
+      run_once: true
+      when: fetch_check.stat is defined
 
-    - name: "Linux | Verificar que el archivo se copió correctamente"
+    - name: "Linux | Fallar si el fetch no funcionó"
+      ansible.builtin.fail:
+        msg: "No se pudo traer el archivo al nodo controlador"
+      run_once: true
+      when: not fetch_check.stat.exists
+
+    # ============================================
+    # PASO 3: COPY - COPIAR DESDE CONTROLADOR AL SERVIDOR DESTINO
+    # ============================================
+    - name: "Linux | COPY - Copiar desde nodo controlador al servidor destino"
+      ansible.builtin.copy:
+        src: "{{ controller_temp_path }}"
+        dest: "{{ dest_full_path }}"
+        mode: '0644'
+      register: copy_result
+
+    - name: "Linux | Verificar que la copia al destino fue exitosa"
       ansible.builtin.stat:
         path: "{{ dest_full_path }}"
       register: file_copied_check
 
-    - name: "Linux | Mostrar información del archivo copiado"
+    - name: "Linux | Mostrar información del archivo en destino"
       ansible.builtin.debug:
         msg:
           - "Archivo destino: {{ dest_full_path }}"
@@ -96,13 +83,30 @@
           - "Tamaño: {{ file_copied_check.stat.size if file_copied_check.stat.exists else 'N/A' }} bytes"
           - "Permisos: {{ file_copied_check.stat.mode if file_copied_check.stat.exists else 'N/A' }}"
 
-    - name: "Linux | Fallar si el archivo no se copió"
+    - name: "Linux | Fallar si el archivo no llegó al destino"
       ansible.builtin.fail:
-        msg: "El archivo {{ dest_full_path }} no se copió correctamente"
+        msg: "El archivo {{ dest_full_path }} no se copió correctamente al servidor destino"
       when: not file_copied_check.stat.exists
 
+    # ============================================
+    # PASO 4: LIMPIEZA - OPCIONAL (PERO RECOMENDADA)
+    # ============================================
+    - name: "Linux | Limpiar archivo temporal del nodo controlador"
+      ansible.builtin.file:
+        path: "{{ controller_temp_path }}"
+        state: absent
+      delegate_to: localhost
+      run_once: true
+      when: fetch_check.stat.exists
+
+    # ============================================
+    # PASO 5: DIAGNÓSTICO DEL DIRECTORIO DESTINO
+    # ============================================
     - name: "Linux | DIAGNÓSTICO - Listar contenido del directorio destino"
-      ansible.builtin.shell: "ls -la {{ dest_full_path | dirname }} | grep -i {{ pkg.name }} || echo 'No hay archivos de {{ pkg.name }} en {{ dest_full_path | dirname }}'"
+      ansible.builtin.shell: |
+        echo "=== CONTENIDO DE {{ dest_full_path | dirname }} ==="
+        ls -la {{ dest_full_path | dirname }} | grep -i {{ pkg.name }} || echo "No hay archivos de {{ pkg.name }} en {{ dest_full_path | dirname }}"
+        echo "=== FIN LISTADO ==="
       register: dir_listing
       changed_when: false
 
@@ -110,6 +114,9 @@
       ansible.builtin.debug:
         msg: "{{ dir_listing.stdout_lines }}"
 
+    # ============================================
+    # PASO 6: INSTALACIÓN DEL PAQUETE
+    # ============================================
     - name: "Linux | Ejecutar comando de instalación con diagnóstico"
       ansible.builtin.shell: |
         set -x
@@ -137,6 +144,9 @@
           - "STDOUT: {{ install_result.stdout }}"
           - "STDERR: {{ install_result.stderr }}"
 
+    # ============================================
+    # PASO 7: VALIDACIÓN POST-INSTALACIÓN
+    # ============================================
     - name: "Linux | Ejecutar validación post-instalación"
       ansible.builtin.shell: "{{ pkg.commands.post_install_validation }}"
       args:
@@ -172,6 +182,9 @@
       changed_when: false
       when: pkg.commands.status is defined
 
+    # ============================================
+    # PASO 8: EXTRACCIÓN DE VERSIÓN
+    # ============================================
     - name: "Linux | Extraer versión instalada"
       ansible.builtin.set_fact:
         installed_version: >-
@@ -181,6 +194,9 @@
             {{ '' }}
           {%- endif -%}
 
+    # ============================================
+    # PASO 9: VERIFICACIÓN MANUAL COMPLETA
+    # ============================================
     - name: "Linux | VERIFICACIÓN MANUAL - Comprobar si {{ pkg.name }} está instalado"
       ansible.builtin.shell: |
         echo "========== VERIFICACIÓN DE INSTALACIÓN: {{ pkg.name }} =========="
@@ -212,6 +228,9 @@
       ansible.builtin.debug:
         var: verification_check.stdout_lines
 
+    # ============================================
+    # PASO 10: GUARDAR LOG COMPLETO
+    # ============================================
     - name: "Linux | Guardar verificación en archivo de log"
       ansible.builtin.copy:
         content: |
@@ -225,15 +244,22 @@
           DIAGNÓSTICO ADICIONAL:
           - Archivo destino: {{ dest_full_path }}
           - Existe archivo: {{ file_copied_check.stat.exists if file_copied_check.stat is defined else 'N/A' }}
+          - Tamaño archivo: {{ file_copied_check.stat.size if file_copied_check.stat.exists else 'N/A' }} bytes
           - Código instalación: {{ install_result.rc }}
           - Output instalación: {{ install_result.stdout }}
           - Error instalación: {{ install_result.stderr }}
-          - Output SCP: {{ scp_result.stdout }}
-          - Error SCP: {{ scp_result.stderr }}
+          - Output validación: {{ validation_result.stdout }}
+          ========================================
+          INFORMACIÓN DEL FETCH:
+          - Archivo temporal: {{ controller_temp_path }}
+          - Fetch exitoso: {{ fetch_check.stat.exists if fetch_check.stat is defined else 'N/A' }}
           ========================================
         dest: "/tmp/installation_verification_{{ pkg.name }}_{{ ansible_date_time.epoch }}.log"
         mode: '0644'
 
+    # ============================================
+    # PASO 11: CONSOLIDAR RESULTADOS
+    # ============================================
     - name: "Linux | Anexar resultado de este paquete a la lista del host"
       ansible.builtin.set_fact:
         host_installation_results: "{{ host_installation_results + [ pkg_result ] }}"
@@ -245,7 +271,8 @@
           status: "{{ 'success' if validation_result.rc is defined and validation_result.rc == 0 else 'failed' }}"
           install_date: "{{ ansible_date_time.iso8601 }}"
           version_installed: "{{ installed_version | default('') }}"
-          copy_output: "{{ scp_result | default({}) }}"
+          copy_output: "{{ copy_result | default({}) }}"
+          fetch_output: "{{ fetch_result | default({}) }}"
           install_output: "{{ install_result.stdout | default('') }}"
           install_stderr: "{{ install_result.stderr | default('') }}"
           install_rc: "{{ install_result.rc | default('') }}"
@@ -256,6 +283,9 @@
           message: ""
 
   rescue:
+    # ============================================
+    # MANEJO DE ERRORES
+    # ============================================
     - name: "Linux | Error en el bloque de instalación de {{ pkg.name }}"
       ansible.builtin.set_fact:
         host_installation_results: "{{ host_installation_results + [ error_result ] }}"
@@ -268,6 +298,7 @@
           install_date: "{{ ansible_date_time.iso8601 }}"
           version_installed: ""
           copy_output: {}
+          fetch_output: {}
           install_output: ""
           install_stderr: ""
           install_rc: ""
