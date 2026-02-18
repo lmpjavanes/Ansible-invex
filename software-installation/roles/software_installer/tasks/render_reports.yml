@@ -22,37 +22,51 @@
     installation_results_windows: "{{ installation_results_windows | default([]) }}"
   run_once: true
 
-- name: "Reporte CSV (Linux)"
+- name: "Debug - Mostrar estructura de datos (temporal)"
+  ansible.builtin.debug:
+    var: installation_results_linux
+    verbosity: 1
+  run_once: true
+
+- name: "Reporte CSV (Linux) - VERIFICAR RUTA"
   ansible.builtin.template:
-    src: linux_installation_report.csv.j2
+    src: "{{ role_path }}/templates/linux_installation_report.csv.j2"
     dest: "{{ report_dir }}/linux_installation_report.csv"
     mode: "0644"
   delegate_to: invd-ts-ansible
   run_once: true
+  vars:
+    ansible_remote_tmp: /tmp/.ansible
 
-- name: "Reporte HTML (Linux)"
+- name: "Reporte HTML (Linux) - VERIFICAR RUTA"
   ansible.builtin.template:
-    src: linux_installation_report.html.j2
+    src: "{{ role_path }}/templates/linux_installation_report.html.j2"
     dest: "{{ report_dir }}/linux_installation_report.html"
     mode: "0644"
   delegate_to: invd-ts-ansible
   run_once: true
+  vars:
+    ansible_remote_tmp: /tmp/.ansible
 
 - name: "Reporte CSV (Windows)"
   ansible.builtin.template:
-    src: windows_installation_report.csv.j2
+    src: "{{ role_path }}/templates/windows_installation_report.csv.j2"
     dest: "{{ report_dir }}/windows_installation_report.csv"
     mode: "0644"
   delegate_to: invd-ts-ansible
   run_once: true
+  vars:
+    ansible_remote_tmp: /tmp/.ansible
 
 - name: "Reporte HTML (Windows)"
   ansible.builtin.template:
-    src: windows_installation_report.html.j2
+    src: "{{ role_path }}/templates/windows_installation_report.html.j2"
     dest: "{{ report_dir }}/windows_installation_report.html"
     mode: "0644"
   delegate_to: invd-ts-ansible
   run_once: true
+  vars:
+    ansible_remote_tmp: /tmp/.ansible
 
 - name: "Mostrar rutas de los reportes generados"
   ansible.builtin.debug:
@@ -62,4 +76,17 @@
       - "Linux HTML: {{ report_dir }}/linux_installation_report.html"
       - "Windows CSV : {{ report_dir }}/windows_installation_report.csv"
       - "Windows HTML: {{ report_dir }}/windows_installation_report.html"
+  run_once: true
+
+- name: "Verificar contenido del primer reporte"
+  ansible.builtin.shell: "head -5 {{ report_dir }}/linux_installation_report.csv"
+  delegate_to: invd-ts-ansible
+  run_once: true
+  register: report_check
+  ignore_errors: true
+
+- name: "Debug - Mostrar primeras líneas del reporte"
+  ansible.builtin.debug:
+    msg: "{{ report_check.stdout_lines }}"
+  when: report_check is defined and report_check.stdout_lines is defined
   run_once: true

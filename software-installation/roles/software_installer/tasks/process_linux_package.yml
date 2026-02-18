@@ -95,6 +95,49 @@
         state: absent
       when: temp_dest_path != dest_full_path
 
+    - name: "Linux | VERIFICACIÓN MANUAL - Comprobar si {{ pkg.name }} está instalado"
+      ansible.builtin.shell: |
+        echo "========== VERIFICACIÓN DE INSTALACIÓN: {{ pkg.name }} =========="
+        echo "1. Verificando con which:"
+        which {{ pkg.name }} 2>/dev/null && echo "✅ {{ pkg.name }} encontrado en $(which {{ pkg.name }})" || echo "❌ {{ pkg.name }} NO encontrado en PATH"
+        echo ""
+        echo "2. Verificando con rpm:"
+        rpm -qa | grep -i {{ pkg.name }} || echo "❌ {{ pkg.name }} no encontrado en RPM database"
+        echo ""
+        echo "3. Verificando versión (si está instalado):"
+        {{ pkg.name }} --version 2>/dev/null || echo "❌ No se pudo obtener versión"
+        echo ""
+        echo "4. Verificando archivo copiado:"
+        ls -la {{ dest_full_path }} 2>/dev/null || echo "❌ Archivo {{ dest_full_path }} no existe"
+        echo ""
+        echo "5. Verificando dependencias (opcional):"
+        rpm -qR {{ pkg.name }} 2>/dev/null | head -5 || echo "❌ No se pueden verificar dependencias"
+        echo "========== FIN VERIFICACIÓN =========="
+      args:
+        executable: /bin/bash
+      register: verification_check
+      changed_when: false
+      ignore_errors: true
+
+    - name: "Linux | Mostrar resultado de verificación de {{ pkg.name }}"
+      ansible.builtin.debug:
+        msg: "{{ verification_check.stdout_lines }}"
+      when: verification_check.stdout_lines is defined
+
+    - name: "Linux | Guardar verificación en archivo de log (opcional)"
+      ansible.builtin.copy:
+        content: |
+          ========================================
+          FECHA: {{ ansible_date_time.iso8601 }}
+          HOST: {{ inventory_hostname }}
+          PAQUETE: {{ pkg.name }}
+          ========================================
+          {{ verification_check.stdout }}
+          ========================================
+        dest: "/tmp/installation_verification_{{ pkg.name }}_{{ ansible_date_time.epoch }}.log"
+        mode: '0644'
+      when: verification_check.stdout is defined
+
     - name: "Linux | Anexar resultado de este paquete a la lista del host (CORREGIDO)"
       ansible.builtin.set_fact:
         host_installation_results: "{{ host_installation_results + [ pkg_result ] }}"
@@ -111,6 +154,7 @@
           validation_output: "{{ validation_result.stdout | default('') }}"
           activation_output: "{{ activation_result.stdout | default('') }}"
           status_output: "{{ status_result.stdout | default('') }}"
+          verification_output: "{{ verification_check.stdout | default('') }}"
           message: ""
 
   rescue:
@@ -130,4 +174,5 @@
           validation_output: ""
           activation_output: ""
           status_output: ""
+          verification_output: ""
           message: "Error durante la instalación: {{ ansible_failed_result.msg | default('Error desconocido') }}"
