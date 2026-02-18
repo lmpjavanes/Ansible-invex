@@ -21,13 +21,26 @@
         msg: "El archivo {{ source_full_path }} no existe en invd-ts-ansible"
       when: not file_check.stat.exists
 
-    - name: "Linux | Copiar {{ pkg.src_file }} desde invd-ts-ansible al servidor destino"
+    - name: "Linux | Copiar {{ pkg.src_file }} desde invd-ts-ansible al servidor destino (MEJORADO)"
       ansible.builtin.fetch:
         src: "{{ source_full_path }}"
         dest: "{{ temp_dest_path }}"
         flat: yes
       delegate_to: invd-ts-ansible
       register: fetch_result
+
+    - name: "Linux | Verificar que el archivo se copió correctamente"
+      ansible.builtin.stat:
+        path: "{{ temp_dest_path }}"
+      register: file_copied_check
+
+    - name: "Linux | Mostrar información del archivo copiado"
+      ansible.builtin.debug:
+        msg:
+          - "Archivo copiado a: {{ temp_dest_path }}"
+          - "Existe: {{ file_copied_check.stat.exists }}"
+          - "Tamaño: {{ file_copied_check.stat.size if file_copied_check.stat.exists else 'N/A' }} bytes"
+      when: file_copied_check.stat is defined
 
     - name: "Linux | Mover el archivo a la ubicación final (si es necesario)"
       ansible.builtin.copy:
@@ -36,14 +49,48 @@
         mode: '0644'
         remote_src: yes
       when: pkg.dest_path is defined and pkg.dest_path != '/tmp/'
+      register: move_result
 
-    - name: "Linux | Ejecutar comando de instalación"
-      ansible.builtin.shell: "{{ pkg.commands.install }} {{ dest_full_path }}"
+    - name: "Linux | Verificar archivo en destino final"
+      ansible.builtin.stat:
+        path: "{{ dest_full_path }}"
+      register: dest_file_check
+
+    - name: "Linux | DIAGNÓSTICO - Listar contenido de /tmp antes de instalación"
+      ansible.builtin.shell: "ls -la /tmp/ | grep -i htop || echo 'No hay archivos htop en /tmp'"
+      register: tmp_listing_before
+      changed_when: false
+
+    - name: "Linux | DIAGNÓSTICO - Mostrar contenido de /tmp"
+      ansible.builtin.debug:
+        msg: "{{ tmp_listing_before.stdout_lines }}"
+
+    - name: "Linux | Ejecutar comando de instalación con diagnóstico"
+      ansible.builtin.shell: |
+        set -x  # Modo debug
+        echo "=== INICIANDO INSTALACIÓN ==="
+        echo "Archivo a instalar: {{ dest_full_path }}"
+        echo "Contenido del directorio:"
+        ls -la {{ dest_full_path | dirname }}
+        echo ""
+        echo "Ejecutando: {{ pkg.commands.install }} {{ dest_full_path }}"
+        {{ pkg.commands.install }} {{ dest_full_path }} 2>&1
+        INSTALL_EXIT_CODE=$?
+        echo "Código de salida: $INSTALL_EXIT_CODE"
+        echo "=== FIN INSTALACIÓN ==="
+        exit $INSTALL_EXIT_CODE
       args:
         executable: /bin/bash
       register: install_result
       failed_when: false
       changed_when: false
+
+    - name: "Linux | Mostrar resultado de instalación"
+      ansible.builtin.debug:
+        msg:
+          - "Código de salida: {{ install_result.rc }}"
+          - "STDOUT: {{ install_result.stdout }}"
+          - "STDERR: {{ install_result.stderr }}"
 
     - name: "Linux | Ejecutar validación post-instalación"
       ansible.builtin.shell: "{{ pkg.commands.post_install_validation }}"
@@ -89,11 +136,16 @@
             {{ '' }}
           {%- endif -%}
 
-    - name: "Linux | Limpiar archivo temporal"
+    - name: "Linux | DIAGNÓSTICO - Listar contenido de /tmp después de instalación"
+      ansible.builtin.shell: "ls -la /tmp/ | grep -i htop || echo 'No hay archivos htop en /tmp'"
+      register: tmp_listing_after
+      changed_when: false
+
+    - name: "Linux | Limpiar archivo temporal (solo si está en /tmp y no es destino final)"
       ansible.builtin.file:
         path: "{{ temp_dest_path }}"
         state: absent
-      when: temp_dest_path != dest_full_path
+      when: temp_dest_path != dest_full_path and temp_dest_path == '/tmp/' + pkg.src_file
 
     - name: "Linux | VERIFICACIÓN MANUAL - Comprobar si {{ pkg.name }} está instalado"
       ansible.builtin.shell: |
@@ -112,6 +164,9 @@
         echo ""
         echo "5. Verificando dependencias (opcional):"
         rpm -qR {{ pkg.name }} 2>/dev/null | head -5 || echo "❌ No se pueden verificar dependencias"
+        echo ""
+        echo "6. Verificando archivos en /tmp:"
+        ls -la /tmp/ | grep -i {{ pkg.name }} || echo "No hay archivos de {{ pkg.name }} en /tmp"
         echo "========== FIN VERIFICACIÓN =========="
       args:
         executable: /bin/bash
@@ -121,10 +176,9 @@
 
     - name: "Linux | Mostrar resultado de verificación de {{ pkg.name }}"
       ansible.builtin.debug:
-        msg: "{{ verification_check.stdout_lines }}"
-      when: verification_check.stdout_lines is defined
+        var: verification_check.stdout_lines
 
-    - name: "Linux | Guardar verificación en archivo de log (opcional)"
+    - name: "Linux | Guardar verificación en archivo de log"
       ansible.builtin.copy:
         content: |
           ========================================
@@ -134,11 +188,15 @@
           ========================================
           {{ verification_check.stdout }}
           ========================================
+          DIAGNÓSTICO ADICIONAL:
+          - Código instalación: {{ install_result.rc }}
+          - Output instalación: {{ install_result.stdout }}
+          - Error instalación: {{ install_result.stderr }}
+          ========================================
         dest: "/tmp/installation_verification_{{ pkg.name }}_{{ ansible_date_time.epoch }}.log"
         mode: '0644'
-      when: verification_check.stdout is defined
 
-    - name: "Linux | Anexar resultado de este paquete a la lista del host (CORREGIDO)"
+    - name: "Linux | Anexar resultado de este paquete a la lista del host"
       ansible.builtin.set_fact:
         host_installation_results: "{{ host_installation_results + [ pkg_result ] }}"
       vars:
@@ -151,6 +209,8 @@
           version_installed: "{{ installed_version | default('') }}"
           copy_output: "{{ fetch_result | default({}) }}"
           install_output: "{{ install_result.stdout | default('') }}"
+          install_stderr: "{{ install_result.stderr | default('') }}"
+          install_rc: "{{ install_result.rc | default('') }}"
           validation_output: "{{ validation_result.stdout | default('') }}"
           activation_output: "{{ activation_result.stdout | default('') }}"
           status_output: "{{ status_result.stdout | default('') }}"
@@ -171,6 +231,8 @@
           version_installed: ""
           copy_output: {}
           install_output: ""
+          install_stderr: ""
+          install_rc: ""
           validation_output: ""
           activation_output: ""
           status_output: ""
