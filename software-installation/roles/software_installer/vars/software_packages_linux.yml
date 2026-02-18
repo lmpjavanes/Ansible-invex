@@ -1,5 +1,26 @@
 ---
 # Lista de paquetes a instalar en servidores Linux.
+# ============================================
+# PAQUETE: [NOMBRE]
+# FECHA: [FECHA]
+# AGREGADO POR: [PERSONA]
+# ============================================
+#  - name: "[nombre-del-paquete]"
+#    description: "[descripción detallada]"
+#    vendor: "[proveedor]"
+#    src_file: "[archivo.rpm]"
+#    dest_path: "/tmp/"  # o /home/{{ ansible_user }}/
+#    package_type: "rpm"
+#    dependencies:
+#      - "[dependencia1]"
+#      - "[dependencia2]"
+#    commands:
+#      install: "rpm -ivh"
+#      post_install_validation: "rpm -qa | grep -i [nombre]"
+#      activation: "[comando de activación]"  # Descomentar si aplica
+#      start: "[comando para iniciar]"        # Descomentar si aplica
+#      status: "[comando para status]"        # Descomentar si aplica
+#    version_regex: "[nombre]-(\\d+.*)"
 
 linux_packages:
   # Paquete: htop
