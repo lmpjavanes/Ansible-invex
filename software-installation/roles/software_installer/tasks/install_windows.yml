@@ -11,7 +11,7 @@
     host_installation_results: []
 
 # ============================================
-# DIAGNÓSTICO DE RUTA (VERSIÓN SIN PROBLEMAS DE ESCAPE)
+# DIAGNÓSTICO DE RUTA (VERSIÓN ULTRA SIMPLE)
 # ============================================
 - name: "Windows | DIAGNÓSTICO - Verificar ruta completa"
   ansible.windows.win_shell: |
@@ -25,6 +25,7 @@
     Write-Output "Longitud de ruta: $($ruta.Length) caracteres"
     Write-Output ""
     
+    # MÉTODO SIMPLE: Usar Test-Path directamente
     if (Test-Path $ruta) {
         Write-Output "✅ LA RUTA COMPLETA EXISTE"
         Write-Output ""
@@ -33,47 +34,25 @@
     } else {
         Write-Output "❌ LA RUTA COMPLETA NO EXISTE"
         Write-Output ""
-        Write-Output "Verificando por partes:"
-        Write-Output "----------------------"
         
-        # Método simplificado - construir la ruta paso a paso
-        $partes = $ruta -split '\\'
-        $testPath = ""
-        $contador = 0
+        # Verificar si el servidor es accesible
+        $servidor = $ruta -split '\\' | Select-Object -First 1
+        $servidor = $servidor -replace '^\\\\', ''
         
-        foreach ($parte in $partes) {
-            $contador++
-            if ($testPath -eq "") {
-                $testPath = $parte
+        if ($servidor) {
+            Write-Output "Verificando servidor: $servidor"
+            if (Test-Connection -ComputerName $servidor -Count 1 -Quiet -ErrorAction SilentlyContinue) {
+                Write-Output "✅ Servidor alcanzable"
             } else {
-                $testPath = $testPath + "\" + $parte
-            }
-            
-            if ($contador -eq 1) {
-                Write-Output "$contador. Servidor: $testPath"
-                # Extraer nombre del servidor (quitar \\)
-                $servidor = $parte -replace '^\\+', ''
-                if ($servidor) {
-                    if (Test-Connection -ComputerName $servidor -Count 1 -Quiet -ErrorAction SilentlyContinue) {
-                        Write-Output "   ✅ Servidor alcanzable"
-                    } else {
-                        Write-Output "   ❌ Servidor NO alcanzable"
-                    }
-                }
-            } else {
-                Write-Output "$contador. $testPath"
-                if (Test-Path $testPath) {
-                    Write-Output "   ✅ Existe"
-                    if ($contador -eq $partes.Count) {
-                        Write-Output ""
-                        Write-Output "Contenido de la carpeta:"
-                        Get-ChildItem $testPath | Select-Object Name | Format-Table -AutoSize
-                    }
-                } else {
-                    Write-Output "   ❌ No existe"
-                }
+                Write-Output "❌ Servidor NO alcanzable"
             }
         }
+        
+        # Listar unidades de red mapeadas
+        Write-Output ""
+        Write-Output "Unidades de red disponibles:"
+        Get-PSDrive -PSProvider FileSystem | Where-Object {$_.Root -like "\\*"} | 
+            Select-Object Name, Root, Used, Free | Format-Table -AutoSize
     }
     
     Write-Output ""
