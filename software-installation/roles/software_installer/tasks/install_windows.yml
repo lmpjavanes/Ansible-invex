@@ -173,12 +173,6 @@
     msg: "🧹 Archivo {{ item.item }} - {{ '✅ Eliminado' if not item.stat.exists else '❌ Aún existe' }}"
   loop: "{{ verify_cleanup.results }}"
 
-- name: "Windows | Opcional: Eliminar el directorio si está vacío"
-  ansible.windows.win_file:
-    path: "{{ win_config.windows_dest_path }}"
-    state: absent
-  when: verify_cleanup.results | map(attribute='stat.exists') | select('equalto', true) | list | length == 0
-
 # ============================================
 # PASO 7: CONSOLIDAR RESULTADOS (MEJORADO)
 # ============================================
