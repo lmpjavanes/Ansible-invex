@@ -10,6 +10,83 @@
   ansible.builtin.set_fact:
     host_installation_results: []
 
+# ============================================
+# DIAGNÓSTICO DE RUTA (NUEVO)
+# ============================================
+- name: "Windows | DIAGNÓSTICO - Verificar ruta completa"
+  ansible.windows.win_shell: |
+    Write-Output "=== VERIFICANDO RUTA DE ARCHIVOS ==="
+    Write-Output "Fecha: $(Get-Date)"
+    Write-Output "Host: $env:COMPUTERNAME"
+    Write-Output ""
+    
+    $ruta = "{{ win_config.windows_software_source }}"
+    Write-Output "Ruta configurada: $ruta"
+    Write-Output "Longitud de ruta: $($ruta.Length) caracteres"
+    Write-Output ""
+    
+    if (Test-Path $ruta) {
+        Write-Output "LA RUTA COMPLETA EXISTE"
+        Write-Output ""
+        Write-Output "Archivos encontrados:"
+        Get-ChildItem $ruta | Select-Object Name, Length, LastWriteTime | Format-Table -AutoSize
+    } else {
+        Write-Output "LA RUTA COMPLETA NO EXISTE"
+        Write-Output ""
+        Write-Output "Verificando por partes:"
+        Write-Output "----------------------"
+        
+        $partes = $ruta.Split('\')
+        $testPath = ""
+        $contador = 0
+        
+        foreach ($parte in $partes) {
+            $contador++
+            if ($testPath -eq "") {
+                $testPath = $parte
+            } else {
+                $testPath = "$testPath\$parte"
+            }
+            
+            if ($contador -eq 1) {
+                Write-Output "$contador. Servidor: $testPath"
+                # Probar conectividad básica
+                if (Test-Connection -ComputerName $parte -Count 1 -Quiet) {
+                    Write-Output "   Servidor alcanzable"
+                } else {
+                    Write-Output "   Servidor NO alcanzable"
+                }
+            } else {
+                Write-Output "$contador. $testPath"
+                if (Test-Path $testPath) {
+                    Write-Output "   Existe"
+                    if ($contador -eq $partes.Count) {
+                        Write-Output ""
+                        Write-Output "Contenido de la carpeta:"
+                        Get-ChildItem $testPath | Select-Object Name | Format-Table -AutoSize
+                    }
+                } else {
+                    Write-Output "   No existe"
+                }
+            }
+        }
+    }
+    
+    Write-Output ""
+    Write-Output "=== FIN DEL DIAGNÓSTICO ==="
+  register: ruta_diagnostico
+
+- name: "Windows | Mostrar diagnóstico de ruta"
+  ansible.builtin.debug:
+    msg: 
+      - "DIAGNÓSTICO DE RUTA:"
+      - "{{ ruta_diagnostico.stdout_lines }}"
+
+- name: "Windows | Detener ejecución si la ruta no es accesible"
+  ansible.builtin.fail:
+    msg: "La ruta {{ win_config.windows_software_source }} no es accesible. Revisa el diagnóstico."
+  when: "'LA RUTA COMPLETA NO EXISTE' in ruta_diagnostico.stdout"
+
 - name: "Windows | Crear directorio de destino si no existe"
   ansible.windows.win_file:
     path: "{{ win_config.windows_dest_path }}"
