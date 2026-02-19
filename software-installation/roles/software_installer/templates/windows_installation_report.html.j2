@@ -18,6 +18,7 @@
   <table>
     <tr>
       <th>Host</th>
+      <th>Ambiente</th>
       <th>Paquete</th>
       <th>Descripción</th>
       <th>Proveedor</th>
@@ -25,6 +26,9 @@
       <th>Fecha instalación</th>
       <th>Versión</th>
       <th>Estado del servicio</th>
+      <th>Puerto 5693</th>
+      <th>Script ejecutado</th>
+      <th>Limpieza</th>
       <th>Mensaje</th>
     </tr>
 
@@ -33,20 +37,24 @@
         {% for pkg in host_result.packages %}
         <tr>
           <td>{{ host_result.host | default('') }}</td>
+          <td>{{ pkg.ambiente | default('N/A') }}</td>
           <td>{{ pkg.package_name | default('') }}</td>
           <td>{{ pkg.description | default('') }}</td>
           <td>{{ pkg.vendor | default('') }}</td>
           <td class="{{ 'bad' if (pkg.status | default('')) in ['failed', 'unreachable', 'unavailable'] else '' }}">{{ pkg.status | default(host_result.overall_status | default('')) }}</td>
           <td>{{ pkg.install_date | default('') }}</td>
-          <td>{{ pkg.version_installed | default('') }}</td>
+          <td>{{ pkg.version_installed | default('N/A') }}</td>
           <td>{{ pkg.service_status | default('N/A') }}</td>
+          <td>{{ pkg.port_status | default('N/A') }}</td>
+          <td>{{ pkg.script_ejecutado | default('') }}</td>
+          <td>{{ 'Sí' if pkg.cleanup_performed == 'Sí' else 'No' }}</td>
           <td class="{{ 'bad' if (host_result.overall_status | default('')) in ['failed', 'unreachable', 'unavailable'] else '' }}">{{ host_result.message | default(pkg.message | default('')) }}</td>
         </tr>
         {% endfor %}
       {% else %}
         <tr>
           <td>{{ host_result.host | default('') }}</td>
-          <td colspan="7" style="font-style: italic;">Sin paquetes procesados</td>
+          <td colspan="11" style="font-style: italic;">Sin paquetes procesados</td>
           <td class="{{ 'bad' if (host_result.overall_status | default('')) in ['failed', 'unreachable', 'unavailable'] else '' }}">{{ host_result.message | default('Sin información') }}</td>
         </tr>
       {% endif %}

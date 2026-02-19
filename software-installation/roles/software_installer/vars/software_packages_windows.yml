@@ -14,30 +14,3 @@ windows_files_to_copy:
 
 # Ruta de destino en los servidores Windows
 windows_dest_path: "C:\\sys\\"
-
-# Configuración específica para el agente Nagios/NCPA
-ncpa_install:
-  description: "Agente de monitorización Nagios NCPA"
-  vendor: "Nagios"
-  
-  # El nombre del ejecutable de instalación
-  installer: "ncpa-latest.exe"
-  
-  # El nombre del paquete para el reporte
-  package_name: "NCPA Agent"
-  
-  # Tokens y configuraciones para cada ambiente
-  prod_token: "{{ nagios_token_prod | default('mytoken_prod') }}"
-  prod_ip: "{{ nagios_ip_prod | default('192.168.215.159') }}"
-  drp_token: "{{ nagios_token_drp | default('mytoken_drp') }}"
-  drp_ip: "{{ nagios_ip_drp | default('192.168.35.123') }}"
-  port: "5693"
-  
-  # Comando para validar la instalación (CORREGIDO - siempre es ncpa.exe)
-  validation_command: "Test-Path 'C:\\Program Files\\Nagios\\NCPA\\ncpa.exe'"
-  
-  # Comando para obtener la versión (CORREGIDO - siempre es ncpa.exe)
-  version_command: "(Get-Item 'C:\\Program Files\\Nagios\\NCPA\\ncpa.exe').VersionInfo.ProductVersion"
-  
-  # Comando para verificar el estado del servicio
-  status_command: "Get-Service -Name ncpasvc -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Status"
