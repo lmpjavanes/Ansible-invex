@@ -11,9 +11,8 @@
     host_installation_results: []
 
 # ============================================
-# DIAGNOSTICO DE RUTA (CORREGIDO)
+# DIAGNÓSTICO DE RUTA (VERSIÓN SIN PROBLEMAS DE ESCAPE)
 # ============================================
-
 - name: "Windows | DIAGNÓSTICO - Verificar ruta completa"
   ansible.windows.win_shell: |
     Write-Output "=== VERIFICANDO RUTA DE ARCHIVOS ==="
@@ -37,15 +36,8 @@
         Write-Output "Verificando por partes:"
         Write-Output "----------------------"
         
-        # Dividir la ruta correctamente
-        $separator = [System.IO.Path]::DirectorySeparatorChar
-        if ($ruta -like "\\*") {
-            # Es una ruta UNC
-            $partes = $ruta -split '\\'
-        } else {
-            $partes = $ruta -split $separator
-        }
-        
+        # Método simplificado - construir la ruta paso a paso
+        $partes = $ruta -split '\\'
         $testPath = ""
         $contador = 0
         
@@ -54,12 +46,12 @@
             if ($testPath -eq "") {
                 $testPath = $parte
             } else {
-                $testPath = "$testPath\\$parte"
+                $testPath = $testPath + "\" + $parte
             }
             
             if ($contador -eq 1) {
                 Write-Output "$contador. Servidor: $testPath"
-                # Probar conectividad básica
+                # Extraer nombre del servidor (quitar \\)
                 $servidor = $parte -replace '^\\+', ''
                 if ($servidor) {
                     if (Test-Connection -ComputerName $servidor -Count 1 -Quiet -ErrorAction SilentlyContinue) {
