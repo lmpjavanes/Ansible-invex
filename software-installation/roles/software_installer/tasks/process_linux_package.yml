@@ -1,5 +1,4 @@
 ---
-# roles/software_installer/tasks/process_linux_package.yml
 
 - name: "Linux | Procesando {{ pkg.name }}"
   vars:

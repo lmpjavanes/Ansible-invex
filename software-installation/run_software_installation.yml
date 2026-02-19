@@ -1,11 +1,10 @@
 ---
-# run_software_installation.yml
 
 - name: "SOFTWARE INSTALLATION: Ejecutar en servidores Linux"
   hosts: LINUX
   gather_facts: yes
   become: yes
-  ignore_unreachable: true   # Continuar con los siguientes hosts aunque este no responda
+  ignore_unreachable: true
   any_errors_fatal: false
   max_fail_percentage: 100
   roles:

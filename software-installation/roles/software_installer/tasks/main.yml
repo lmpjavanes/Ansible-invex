@@ -1,5 +1,4 @@
 ---
-# roles/software_installer/tasks/main.yml
 
 - name: "Definir facts iniciales para el resultado"
   ansible.builtin.set_fact:

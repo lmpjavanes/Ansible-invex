@@ -1,5 +1,4 @@
 ---
-# software_packages_windows.yml
 # Configuracion para la instalacion en Windows.
 
 # Ruta base en el NFS accesible desde los servidores Windows

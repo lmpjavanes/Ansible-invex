@@ -1,5 +1,4 @@
 ---
-# roles/software_installer/tasks/install_windows.yml
 
 - name: "Windows | Cargar configuracion de paquetes"
   ansible.builtin.include_vars:
