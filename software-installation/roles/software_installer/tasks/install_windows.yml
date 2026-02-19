@@ -1,5 +1,6 @@
 ---
 # roles/software_installer/tasks/install_windows.yml
+# VERSIÓN SIMPLIFICADA - SOLO COPIA Y EJECUTA EL .BAT CORRESPONDIENTE
 
 - name: "Windows | Cargar configuración de paquetes"
   ansible.builtin.include_vars:
@@ -11,70 +12,32 @@
     host_installation_results: []
 
 # ============================================
-# DIAGNÓSTICO DE RUTA (VERSIÓN ULTRA SIMPLE)
+# PASO 1: VERIFICAR RUTA DE ORIGEN
 # ============================================
-- name: "Windows | DIAGNÓSTICO - Verificar ruta completa"
+- name: "Windows | Verificar que la ruta de origen existe"
   ansible.windows.win_shell: |
-    Write-Output "=== VERIFICANDO RUTA DE ARCHIVOS ==="
-    Write-Output "Fecha: $(Get-Date)"
-    Write-Output "Host: $env:COMPUTERNAME"
-    Write-Output ""
-    
     $ruta = "{{ win_config.windows_software_source }}"
-    Write-Output "Ruta configurada: $ruta"
-    Write-Output "Longitud de ruta: $($ruta.Length) caracteres"
-    Write-Output ""
-    
-    # MÉTODO SIMPLE: Usar Test-Path directamente
     if (Test-Path $ruta) {
-        Write-Output "✅ LA RUTA COMPLETA EXISTE"
-        Write-Output ""
-        Write-Output "Archivos encontrados:"
-        Get-ChildItem $ruta | Select-Object Name, Length, LastWriteTime | Format-Table -AutoSize
+        Write-Output "✅ Ruta de origen accesible"
+        exit 0
     } else {
-        Write-Output "❌ LA RUTA COMPLETA NO EXISTE"
-        Write-Output ""
-        
-        # Verificar si el servidor es accesible
-        $servidor = $ruta -split '\\' | Select-Object -First 1
-        $servidor = $servidor -replace '^\\\\', ''
-        
-        if ($servidor) {
-            Write-Output "Verificando servidor: $servidor"
-            if (Test-Connection -ComputerName $servidor -Count 1 -Quiet -ErrorAction SilentlyContinue) {
-                Write-Output "✅ Servidor alcanzable"
-            } else {
-                Write-Output "❌ Servidor NO alcanzable"
-            }
-        }
-        
-        # Listar unidades de red mapeadas
-        Write-Output ""
-        Write-Output "Unidades de red disponibles:"
-        Get-PSDrive -PSProvider FileSystem | Where-Object {$_.Root -like "\\*"} | 
-            Select-Object Name, Root, Used, Free | Format-Table -AutoSize
+        Write-Output "❌ Ruta de origen NO accesible: $ruta"
+        exit 1
     }
-    
-    Write-Output ""
-    Write-Output "=== FIN DEL DIAGNÓSTICO ==="
-  register: ruta_diagnostico
+  register: ruta_check
+  failed_when: ruta_check.rc != 0
 
-- name: "Windows | Mostrar diagnóstico de ruta"
-  ansible.builtin.debug:
-    msg: 
-      - "DIAGNÓSTICO DE RUTA:"
-      - "{{ ruta_diagnostico.stdout_lines }}"
-
-- name: "Windows | Detener ejecución si la ruta no es accesible"
-  ansible.builtin.fail:
-    msg: "La ruta {{ win_config.windows_software_source }} no es accesible. Revisa el diagnóstico."
-  when: "'LA RUTA COMPLETA NO EXISTE' in ruta_diagnostico.stdout"
-
-- name: "Windows | Crear directorio de destino si no existe"
+# ============================================
+# PASO 2: CREAR DIRECTORIO DESTINO
+# ============================================
+- name: "Windows | Crear directorio de destino"
   ansible.windows.win_file:
     path: "{{ win_config.windows_dest_path }}"
     state: directory
 
+# ============================================
+# PASO 3: COPIAR ARCHIVOS
+# ============================================
 - name: "Windows | Copiar archivos necesarios desde el NFS"
   ansible.windows.win_copy:
     src: "{{ win_config.windows_software_source }}\\{{ item }}"
@@ -83,9 +46,18 @@
   loop: "{{ win_config.windows_files_to_copy }}"
   register: copy_files_result
 
-- name: "Windows | Determinar el script de instalación según el grupo"
+- name: "Windows | Verificar que los archivos se copiaron"
+  ansible.windows.win_stat:
+    path: "{{ win_config.windows_dest_path }}{{ item }}"
+  loop: "{{ win_config.windows_files_to_copy }}"
+  register: verify_copy
+
+# ============================================
+# PASO 4: DETERMINAR Y EJECUTAR SCRIPT SEGÚN GRUPO
+# ============================================
+- name: "Windows | Determinar script a ejecutar según el grupo"
   ansible.builtin.set_fact:
-    install_script: >-
+    script_a_ejecutar: >-
       {% if 'PROD' in group_names %}
       {{ win_config.windows_dest_path }}Instalar_Nagios_KIO.BAT
       {% elif 'DRP' in group_names %}
@@ -93,46 +65,52 @@
       {% else %}
       ""
       {% endif %}
+    ambiente_detectado: "{{ 'PROD' if 'PROD' in group_names else 'DRP' if 'DRP' in group_names else 'DESCONOCIDO' }}"
 
-- name: "Windows | Ejecutar script de instalación (si se determinó uno)"
-  ansible.windows.win_command: "{{ install_script }}"
+- name: "Windows | Mostrar información de ejecución"
+  ansible.builtin.debug:
+    msg:
+      - "🌍 Ambiente detectado: {{ ambiente_detectado }}"
+      - "📜 Script a ejecutar: {{ script_a_ejecutar }}"
+      - "📁 Ruta de trabajo: {{ win_config.windows_dest_path }}"
+
+- name: "Windows | Ejecutar script de instalación (como administrador)"
+  ansible.windows.win_command: "{{ script_a_ejecutar }}"
+  args:
+    chdir: "{{ win_config.windows_dest_path }}"
   register: script_execution
   failed_when: false
-  changed_when: false
-  when: install_script != ""
+  changed_when: script_execution.rc == 0
+  when: script_a_ejecutar != ""
+  become: true
+  become_method: runas
+  become_user: SYSTEM
 
-- name: "Windows | Validar instalación (existencia de ncpa-latest.exe)"
-  ansible.windows.win_stat:
-    path: "C:\\Program Files\\Nagios\\NCPA\\ncpa-latest.exe"
-  register: validation_stat
+- name: "Windows | Mostrar resultado de la ejecución"
+  ansible.builtin.debug:
+    msg:
+      - "⚙️ Código de salida: {{ script_execution.rc }}"
+      - "📝 Output: {{ script_execution.stdout }}"
+      - "❌ Error: {{ script_execution.stderr }}"
+  when: script_execution is defined
 
-- name: "Windows | Obtener versión del ejecutable"
-  ansible.windows.win_shell: "{{ win_config.ncpa_install.version_command }}"
-  register: version_result
-  failed_when: false
-  changed_when: false
-  when: validation_stat.stat.exists
-
-- name: "Windows | Verificar estado del servicio NCPA"
-  ansible.windows.win_shell: "{{ win_config.ncpa_install.status_command }}"
-  register: service_status
-  failed_when: false
-  changed_when: false
-
+# ============================================
+# PASO 5: CONSOLIDAR RESULTADOS
+# ============================================
 - name: "Windows | Construir resultado de instalación"
   ansible.builtin.set_fact:
     host_installation_results: "{{ host_installation_results + [ pkg_result ] }}"
   vars:
     pkg_result:
-      package_name: "{{ win_config.ncpa_install.package_name }}"
-      description: "{{ win_config.ncpa_install.description }}"
-      vendor: "{{ win_config.ncpa_install.vendor }}"
-      status: "{{ 'success' if validation_stat.stat.exists else 'failed' }}"
+      package_name: "NCPA Agent"
+      ambiente: "{{ ambiente_detectado }}"
+      script_ejecutado: "{{ script_a_ejecutar | basename }}"
+      status: "{{ 'success' if script_execution.rc == 0 else 'failed' }}"
       install_date: "{{ ansible_date_time.iso8601 }}"
-      version_installed: "{{ version_result.stdout | default('') | trim }}"
-      service_status: "{{ service_status.stdout | default('N/A') | trim }}"
-      copy_output: "{{ copy_files_result }}"
+      rc: "{{ script_execution.rc | default('') }}"
       script_output: "{{ script_execution.stdout | default('') }}"
+      script_error: "{{ script_execution.stderr | default('') }}"
+      files_copied: "{{ win_config.windows_files_to_copy | join(', ') }}"
 
 - name: "Windows | Determinar estado general del host"
   ansible.builtin.set_fact:
@@ -148,5 +126,6 @@
       host: "{{ inventory_hostname }}"
       os_family: "Windows"
       overall_status: "{{ overall_host_status }}"
+      ambiente: "{{ ambiente_detectado }}"
       packages: "{{ host_installation_results }}"
-      message: "Procesado paquete NCPA."
+      message: "Ejecutado script {{ script_a_ejecutar | basename }} en ambiente {{ ambiente_detectado }}"
