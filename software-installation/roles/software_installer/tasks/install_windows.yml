@@ -27,9 +27,9 @@
   ansible.builtin.set_fact:
     install_script: >-
       {% if 'PROD' in group_names %}
-      {{ win_config.windows_dest_path }}install_ncpa_prod.bat
+      {{ win_config.windows_dest_path }}Instalar_Nagios_KIO.BAT
       {% elif 'DRP' in group_names %}
-      {{ win_config.windows_dest_path }}install_ncpa_drp.bat
+      {{ win_config.windows_dest_path }}Instalar_Nagios_TRIARA.BAT
       {% else %}
       ""
       {% endif %}
@@ -41,9 +41,9 @@
   changed_when: false
   when: install_script != ""
 
-- name: "Windows | Validar instalación (existencia de ncpa.exe)"
+- name: "Windows | Validar instalación (existencia de ncpa-latest.exe)"
   ansible.windows.win_stat:
-    path: "C:\\Program Files\\Nagios\\NCPA\\ncpa.exe"
+    path: "C:\\Program Files\\Nagios\\NCPA\\ncpa-latest.exe"
   register: validation_stat
 
 - name: "Windows | Obtener versión del ejecutable"

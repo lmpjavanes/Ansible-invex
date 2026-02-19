@@ -3,13 +3,14 @@
 # Configuración para la instalación en Windows.
 
 # Ruta base en el NFS accesible desde los servidores Windows
-windows_software_source: "\\\\kirov01\\SISTEMASOPERATIVOS_WINDOWSLINUX\\Software\\Agente Nagios\\Nagios"
+# windows_software_source: "\\\\kirov01\\SISTEMASOPERATIVOS_WINDOWSLINUX\\Software\\Agente_Nagios\\Nagios"
+windows_software_source: "\\\\VBOXSVR\\kirov01\\SISTEMASOPERATIVOS_WINDOWSLINUX\\Software\\Agente_Nagios"
 
 # Archivos a copiar desde la fuente
 windows_files_to_copy:
-  - "ncpa.exe"
-  - "install_ncpa_prod.bat"
-  - "install_ncpa_drp.bat"
+  - "ncpa-latest.exe"
+  - "Instalar_Nagios_KIO.BAT"
+  - "Instalar_Nagios_TRIARA.BAT"
 
 # Ruta de destino en los servidores Windows
 windows_dest_path: "C:\\sys\\"
@@ -20,7 +21,7 @@ ncpa_install:
   vendor: "Nagios"
   
   # El nombre del ejecutable de instalación
-  installer: "ncpa.exe"
+  installer: "ncpa-latest.exe"
   
   # El nombre del paquete para el reporte
   package_name: "NCPA Agent"
@@ -33,10 +34,10 @@ ncpa_install:
   port: "5693"  # Puerto estándar de NCPA
   
   # Comando para validar la instalación
-  validation_command: "Test-Path 'C:\\Program Files\\Nagios\\NCPA\\ncpa.exe'"
+  validation_command: "Test-Path 'C:\\Program Files\\Nagios\\NCPA\\ncpa-latest.exe'"
   
   # Comando para obtener la versión
-  version_command: "(Get-Item 'C:\\Program Files\\Nagios\\NCPA\\ncpa.exe').VersionInfo.ProductVersion"
+  version_command: "(Get-Item 'C:\\Program Files\\Nagios\\NCPA\\ncpa-latest.exe').VersionInfo.ProductVersion"
   
   # Comando para verificar el estado del servicio
   status_command: "Get-Service -Name ncpasvc -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Status"
