@@ -171,7 +171,7 @@
   loop: "{{ verify_cleanup.results }}"
 
 # ============================================
-# PASO 7: CONSOLIDAR RESULTADOS (MEJORADO)
+# PASO 7: CONSOLIDAR RESULTADOS
 # ============================================
 - name: "Windows | Construir resultado de instalacion"
   ansible.builtin.set_fact:

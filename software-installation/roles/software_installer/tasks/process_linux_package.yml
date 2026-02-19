@@ -99,7 +99,7 @@
       when: fetch_check.stat.exists
 
     # ============================================
-    # PASO 5: INSTALAR DEPENDENCIAS (SOLUCION ELEGANTE)
+    # PASO 5: INSTALAR DEPENDENCIAS
     # ============================================
     - name: "Linux | Instalar dependencias del paquete {{ pkg.name }}"
       ansible.builtin.dnf:
@@ -132,7 +132,7 @@
         msg: "{{ dir_listing.stdout_lines }}"
 
     # ============================================
-    # PASO 7: VERIFICACION DE INSTALACION PREVIA (SIN BECOME)
+    # PASO 7: VERIFICACION DE INSTALACION PREVIA
     # ============================================
     - name: "Linux | Verificar si {{ pkg.name }} ya esta instalado"
       ansible.builtin.shell: "rpm -q {{ pkg.name }}"
@@ -147,10 +147,9 @@
       when: pkg_check.rc == 0
 
     # ============================================
-    # PASO 8: BLOQUE DE COMANDOS PRIVILEGIADOS (CON BECOME)
-    # Instalacion, activacion, inicio y status requieren sudo
+    # PASO 8: BLOQUE DE COMANDOS PRIVILEGIADOS
     # ============================================
-    - name: "Linux | Ejecutar comandos privilegiados para {{ pkg.name }}"
+    - name: "Linux | Ejecutar comandos con privilegios para {{ pkg.name }}"
       block:
         - name: "Instalar paquete (si no esta instalado)"
           ansible.builtin.shell: |
@@ -214,7 +213,7 @@
       when: pkg_check.rc == 0
 
     # ============================================
-    # PASO 10: VALIDACION POST-INSTALACION (SIN BECOME)
+    # PASO 10: VALIDACION POST-INSTALACION
     # ============================================
     - name: "Linux | Ejecutar validacion post-instalacion de {{ pkg.name }}"
       ansible.builtin.shell: "{{ pkg.commands.post_install_validation }}"

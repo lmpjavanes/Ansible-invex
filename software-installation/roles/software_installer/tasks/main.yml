@@ -10,7 +10,7 @@
       packages: []
       message: ""
 
-- name: "Detectar hosts no disponibles (facts no recopilados)"
+- name: "Detectar hosts no disponibles"
   ansible.builtin.set_fact:
     host_unreachable: true
   when: ansible_os_family is not defined
