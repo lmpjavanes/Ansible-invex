@@ -18,10 +18,10 @@
   ansible.windows.win_shell: |
     $ruta = "{{ win_config.windows_software_source }}"
     if (Test-Path $ruta) {
-        Write-Output "✅ Ruta de origen accesible"
+        Write-Output "Ruta de origen accesible"
         exit 0
     } else {
-        Write-Output "❌ Ruta de origen NO accesible: $ruta"
+        Write-Output "Ruta de origen NO accesible: $ruta"
         exit 1
     }
   register: ruta_check
@@ -70,9 +70,9 @@
 - name: "Windows | Mostrar información de ejecución"
   ansible.builtin.debug:
     msg:
-      - "🌍 Ambiente detectado: {{ ambiente_detectado }}"
-      - "📜 Script a ejecutar: {{ script_a_ejecutar }}"
-      - "📁 Ruta de trabajo: {{ win_config.windows_dest_path }}"
+      - "Ambiente detectado: {{ ambiente_detectado }}"
+      - "Script a ejecutar: {{ script_a_ejecutar }}"
+      - "Ruta de trabajo: {{ win_config.windows_dest_path }}"
 
 - name: "Windows | Ejecutar script de instalación (como administrador)"
   ansible.windows.win_command: "{{ script_a_ejecutar }}"
@@ -89,9 +89,9 @@
 - name: "Windows | Mostrar resultado de la ejecución"
   ansible.builtin.debug:
     msg:
-      - "⚙️ Código de salida: {{ script_execution.rc }}"
-      - "📝 Output: {{ script_execution.stdout }}"
-      - "❌ Error: {{ script_execution.stderr }}"
+      - "Código de salida: {{ script_execution.rc }}"
+      - "Output: {{ script_execution.stdout }}"
+      - "Error: {{ script_execution.stderr }}"
   when: script_execution is defined
 
 # ============================================
@@ -136,18 +136,16 @@
 - name: "Windows | Mostrar diagnóstico de instalación"
   ansible.builtin.debug:
     msg:
-      - "🔍 DIAGNÓSTICO DE INSTALACIÓN:"
-      - "📦 NCPA instalado: {{ 'Sí' if ncpa_installed.stat.exists else 'No' }}"
-      - "📊 Versión: {{ ncpa_version.stdout | default('N/A') }}"
-      - "⚙️ Estado servicio: {{ service_status.stdout | default('N/A') }}"
-      - "🔌 Puerto 5693: {{ port_check.stdout | default('No verificado') }}"
+      - "DIAGNÓSTICO DE INSTALACIÓN:"
+      - "NCPA instalado: {{ 'Sí' if ncpa_installed.stat.exists else 'No' }}"
+      - "Versión: {{ ncpa_version.stdout | default('N/A') }}"
 
 # ============================================
 # PASO 6: LIMPIAR ARCHIVOS TEMPORALES
 # ============================================
 - name: "Windows | Listar archivos en C: \ sys \ antes de limpiar"
   ansible.windows.win_shell: |
-    Write-Output "📁 Archivos en {{ win_config.windows_dest_path }}:"
+    Write-Output "Archivos en {{ win_config.windows_dest_path }}:"
     Get-ChildItem "{{ win_config.windows_dest_path }}" | Select-Object Name, Length | Format-Table -AutoSize
   register: files_before_cleanup
 
@@ -170,7 +168,7 @@
 
 - name: "Windows | Mostrar resultado de la limpieza"
   ansible.builtin.debug:
-    msg: "🧹 Archivo {{ item.item }} - {{ '✅ Eliminado' if not item.stat.exists else '❌ Aún existe' }}"
+    msg: "🧹 Archivo {{ item.item }} - {{ 'Eliminado' if not item.stat.exists else 'Aún existe' }}"
   loop: "{{ verify_cleanup.results }}"
 
 # ============================================

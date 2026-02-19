@@ -25,8 +25,6 @@
       <th>Estado</th>
       <th>Fecha instalación</th>
       <th>Versión</th>
-      <th>Estado del servicio</th>
-      <th>Puerto 5693</th>
       <th>Script ejecutado</th>
       <th>Limpieza</th>
       <th>Mensaje</th>
@@ -43,9 +41,7 @@
           <td>{{ pkg.vendor | default('') }}</td>
           <td class="{{ 'bad' if (pkg.status | default('')) in ['failed', 'unreachable', 'unavailable'] else '' }}">{{ pkg.status | default(host_result.overall_status | default('')) }}</td>
           <td>{{ pkg.install_date | default('') }}</td>
-          <td>{{ pkg.version_installed | default('N/A') }}</td>
-          <td>{{ pkg.service_status | default('N/A') }}</td>
-          <td>{{ pkg.port_status | default('N/A') }}</td>
+          <td>{{ pkg.version_installed | default('N/A') }}</td>        
           <td>{{ pkg.script_ejecutado | default('') }}</td>
           <td>{{ 'Sí' if pkg.cleanup_performed == 'Sí' else 'No' }}</td>
           <td class="{{ 'bad' if (host_result.overall_status | default('')) in ['failed', 'unreachable', 'unavailable'] else '' }}">{{ host_result.message | default(pkg.message | default('')) }}</td>
