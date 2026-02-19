@@ -60,7 +60,7 @@
                 'host': item,
                 'os_family': 'Linux',
                 'overall_status': 'unreachable',
-                'message': 'Host no alcanzable o error antes de la instalación'
+                'message': 'Host no alcanzable o error antes de la instalacion'
               })
           }}
       loop: "{{ groups['LINUX'] | default([]) }}"
@@ -77,7 +77,7 @@
                 'host': item,
                 'os_family': 'Windows',
                 'overall_status': 'unreachable',
-                'message': 'Host no alcanzable o error antes de la instalación'
+                'message': 'Host no alcanzable o error antes de la instalacion'
               })
           }}
       loop: "{{ windows_hosts }}"

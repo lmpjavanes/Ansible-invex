@@ -6,7 +6,7 @@
 # AGREGADO POR: [PERSONA]
 # ============================================
 #  - name: "[nombre-del-paquete]"
-#    description: "[descripción detallada]"
+#    description: "[descripcion detallada]"
 #    vendor: "[proveedor]"
 #    src_file: "[archivo.rpm]"
 #    dest_path: "/tmp/"  # o /home/{{ ansible_user }}/
@@ -17,7 +17,7 @@
 #    commands:
 #      install: "rpm -ivh"
 #      post_install_validation: "rpm -qa | grep -i [nombre]"
-#      activation: "[comando de activación]"  # Descomentar si aplica
+#      activation: "[comando de activacion]"  # Descomentar si aplica
 #      start: "[comando para iniciar]"        # Descomentar si aplica
 #      status: "[comando para status]"        # Descomentar si aplica
 #    version_regex: "[nombre]-(\\d+.*)"
@@ -31,7 +31,7 @@ linux_packages:
     src_file: "htop-3.3.0-1.el9.x86_64.rpm"
     dest_path: "/tmp/"
     package_type: "rpm"
-    # Dependencias del paquete (se instalarán automáticamente)
+    # Dependencias del paquete (se instalaran automaticamente)
     dependencies:
       - "hwloc"
       - "ncurses"

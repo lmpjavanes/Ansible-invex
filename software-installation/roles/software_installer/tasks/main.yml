@@ -15,7 +15,7 @@
     host_unreachable: true
   when: ansible_os_family is not defined
 
-- name: "Marcar como unreachable y finalizar si el host no está disponible"
+- name: "Marcar como unreachable y finalizar si el host no esta disponible"
   ansible.builtin.set_fact:
     software_installation_result:
       host: "{{ inventory_hostname }}"
@@ -25,14 +25,14 @@
       message: "Host no alcanzable. No se pudo recopilar facts."
   when: host_unreachable | default(false)
 
-- name: "Finalizar ejecución para hosts no disponibles"
+- name: "Finalizar ejecucion para hosts no disponibles"
   ansible.builtin.meta: end_host
   when: host_unreachable | default(false)
 
-- name: "Incluir tareas de instalación para Linux"
+- name: "Incluir tareas de instalacion para Linux"
   ansible.builtin.include_tasks: install_linux.yml
   when: ansible_os_family != "Windows"
 
-- name: "Incluir tareas de instalación para Windows"
+- name: "Incluir tareas de instalacion para Windows"
   ansible.builtin.include_tasks: install_windows.yml
   when: ansible_os_family == "Windows"

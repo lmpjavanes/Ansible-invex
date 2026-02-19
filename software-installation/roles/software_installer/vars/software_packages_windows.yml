@@ -1,6 +1,6 @@
 ---
 # software_packages_windows.yml
-# Configuración para la instalación en Windows.
+# Configuracion para la instalacion en Windows.
 
 # Ruta base en el NFS accesible desde los servidores Windows
 # windows_software_source: "\\\\kirov01\\SISTEMASOPERATIVOS_WINDOWSLINUX\\Software\\Agente_Nagios\\Nagios"

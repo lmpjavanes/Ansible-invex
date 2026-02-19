@@ -1,6 +1,5 @@
 ---
 # roles/software_installer/tasks/process_linux_package.yml
-# SOLUCIÓN DEFINITIVA CON MANEJO DE DEPENDENCIAS
 
 - name: "Linux | Procesando {{ pkg.name }}"
   vars:
@@ -12,7 +11,7 @@
     controller_temp_path: "/tmp/ansible_temp_{{ pkg.src_file }}"
   block:
     # ============================================
-    # PASO 1: VERIFICACIÓN EN ORIGEN
+    # PASO 1: VERIFICACION EN ORIGEN
     # ============================================
     - name: "Linux | Verificar que el archivo existe en invd-ts-ansible"
       ansible.builtin.stat:
@@ -45,7 +44,7 @@
       register: fetch_check
       run_once: true
 
-    - name: "Linux | Mostrar información del fetch"
+    - name: "Linux | Mostrar informacion del fetch"
       ansible.builtin.debug:
         msg:
           - "Archivo temporal en controlador: {{ controller_temp_path }}"
@@ -54,7 +53,7 @@
       run_once: true
       when: fetch_check.stat is defined
 
-    - name: "Linux | Fallar si el fetch no funcionó"
+    - name: "Linux | Fallar si el fetch no funciono"
       ansible.builtin.fail:
         msg: "No se pudo traer el archivo al nodo controlador"
       run_once: true
@@ -75,7 +74,7 @@
         path: "{{ dest_full_path }}"
       register: file_copied_check
 
-    - name: "Linux | Mostrar información del archivo en destino"
+    - name: "Linux | Mostrar informacion del archivo en destino"
       ansible.builtin.debug:
         msg:
           - "Archivo destino: {{ dest_full_path }}"
@@ -83,9 +82,9 @@
           - "Tamaño: {{ file_copied_check.stat.size if file_copied_check.stat.exists else 'N/A' }} bytes"
           - "Permisos: {{ file_copied_check.stat.mode if file_copied_check.stat.exists else 'N/A' }}"
 
-    - name: "Linux | Fallar si el archivo no llegó al destino"
+    - name: "Linux | Fallar si el archivo no llego al destino"
       ansible.builtin.fail:
-        msg: "El archivo {{ dest_full_path }} no se copió correctamente al servidor destino"
+        msg: "El archivo {{ dest_full_path }} no se copio correctamente al servidor destino"
       when: not file_copied_check.stat.exists
 
     # ============================================
@@ -100,7 +99,7 @@
       when: fetch_check.stat.exists
 
     # ============================================
-    # PASO 5: INSTALAR DEPENDENCIAS (SOLUCIÓN ELEGANTE)
+    # PASO 5: INSTALAR DEPENDENCIAS (SOLUCION ELEGANTE)
     # ============================================
     - name: "Linux | Instalar dependencias del paquete {{ pkg.name }}"
       ansible.builtin.dnf:
@@ -110,17 +109,17 @@
       when: pkg.dependencies is defined and pkg.dependencies | length > 0
       register: deps_install
 
-    - name: "Linux | Mostrar resultado de instalación de dependencias"
+    - name: "Linux | Mostrar resultado de instalacion de dependencias"
       ansible.builtin.debug:
         msg:
           - "Dependencias instaladas: {{ pkg.dependencies | join(', ') }}"
-          - "Resultado: {{ 'Exitoso' if deps_install is success else 'Falló' }}"
+          - "Resultado: {{ 'Exitoso' if deps_install is success else 'Fallo' }}"
       when: pkg.dependencies is defined and pkg.dependencies | length > 0
 
     # ============================================
-    # PASO 6: DIAGNÓSTICO DEL DIRECTORIO DESTINO
+    # PASO 6: DIAGNOSTICO DEL DIRECTORIO DESTINO
     # ============================================
-    - name: "Linux | DIAGNÓSTICO - Listar contenido del directorio destino"
+    - name: "Linux | DIAGNOSTICO - Listar contenido del directorio destino"
       ansible.builtin.shell: |
         echo "=== CONTENIDO DE {{ dest_full_path | dirname }} ==="
         ls -la {{ dest_full_path | dirname }} | grep -i {{ pkg.name }} || echo "No hay archivos de {{ pkg.name }} en {{ dest_full_path | dirname }}"
@@ -128,55 +127,96 @@
       register: dir_listing
       changed_when: false
 
-    - name: "Linux | DIAGNÓSTICO - Mostrar contenido del directorio"
+    - name: "Linux | DIAGNOSTICO - Mostrar contenido del directorio"
       ansible.builtin.debug:
         msg: "{{ dir_listing.stdout_lines }}"
 
     # ============================================
-    # PASO 7: INSTALACIÓN DEL PAQUETE
+    # PASO 7: VERIFICACION DE INSTALACION PREVIA (SIN BECOME)
     # ============================================
-    - name: "Linux | Verificar si {{ pkg.name }} ya está instalado"
+    - name: "Linux | Verificar si {{ pkg.name }} ya esta instalado"
       ansible.builtin.shell: "rpm -q {{ pkg.name }}"
       register: pkg_check
       changed_when: false
       failed_when: false
       ignore_errors: true
 
-    - name: "Linux | Mostrar estado de instalación de {{ pkg.name }}"
+    - name: "Linux | Mostrar estado de instalacion de {{ pkg.name }}"
       ansible.builtin.debug:
-        msg: "{{ pkg.name }} ya está instalado (versión: {{ pkg_check.stdout }})"
+        msg: "{{ pkg.name }} ya esta instalado (version: {{ pkg_check.stdout }})"
       when: pkg_check.rc == 0
 
-    - name: "Linux | Ejecutar comando de instalación de {{ pkg.name }} (si no está instalado)"
-      ansible.builtin.shell: |
-        set -x
-        echo "=== INICIANDO INSTALACIÓN DE {{ pkg.name }} ==="
-        echo "Archivo a instalar: {{ dest_full_path }}"
-        echo "Ejecutando: rpm -ivh {{ dest_full_path }}"
-        rpm -ivh {{ dest_full_path }} 2>&1
-        INSTALL_EXIT_CODE=$?
-        echo "Código de salida: $INSTALL_EXIT_CODE"
-        echo "=== FIN INSTALACIÓN ==="
-        exit $INSTALL_EXIT_CODE
-      args:
-        executable: /bin/bash
-      register: install_result
-      failed_when: false
-      changed_when: install_result.rc == 0
-      when: pkg_check.rc != 0
+    # ============================================
+    # PASO 8: BLOQUE DE COMANDOS PRIVILEGIADOS (CON BECOME)
+    # Instalacion, activacion, inicio y status requieren sudo
+    # ============================================
+    - name: "Linux | Ejecutar comandos privilegiados para {{ pkg.name }}"
+      block:
+        - name: "Instalar paquete (si no esta instalado)"
+          ansible.builtin.shell: |
+            set -x
+            echo "=== INICIANDO INSTALACION DE {{ pkg.name }} ==="
+            echo "Archivo a instalar: {{ dest_full_path }}"
+            echo "Ejecutando: rpm -ivh {{ dest_full_path }}"
+            rpm -ivh {{ dest_full_path }} 2>&1
+            INSTALL_EXIT_CODE=$?
+            echo "Codigo de salida: $INSTALL_EXIT_CODE"
+            echo "=== FIN INSTALACION ==="
+            exit $INSTALL_EXIT_CODE
+          args:
+            executable: /bin/bash
+          register: install_result
+          failed_when: false
+          changed_when: install_result.rc == 0
+          when: pkg_check.rc != 0
 
-    - name: "Linux | Registrar resultado de instalación (para paquetes ya instalados)"
+        - name: "Ejecutar activacion (si aplica)"
+          ansible.builtin.shell: "{{ pkg.commands.activation }}"
+          args:
+            executable: /bin/bash
+          register: activation_result
+          failed_when: false
+          changed_when: false
+          when: pkg.commands.activation is defined
+
+        - name: "Iniciar servicio (si aplica)"
+          ansible.builtin.shell: "{{ pkg.commands.start }}"
+          args:
+            executable: /bin/bash
+          register: start_result
+          failed_when: false
+          changed_when: false
+          when: pkg.commands.start is defined
+
+        - name: "Verificar estatus del servicio (si aplica)"
+          ansible.builtin.shell: "{{ pkg.commands.status }}"
+          args:
+            executable: /bin/bash
+          register: status_result
+          failed_when: false
+          changed_when: false
+          when: pkg.commands.status is defined
+
+      become: true
+      become_method: sudo
+      become_user: root
+      when: pkg_check.rc != 0 or pkg.commands.activation is defined or pkg.commands.start is defined or pkg.commands.status is defined
+
+    # ============================================
+    # PASO 9: REGISTRAR RESULTADO PARA PAQUETES YA INSTALADOS
+    # ============================================
+    - name: "Linux | Registrar resultado de instalacion (para paquetes ya instalados)"
       ansible.builtin.set_fact:
         install_result: 
           rc: 0
-          stdout: "Paquete {{ pkg.name }} ya estaba instalado (versión: {{ pkg_check.stdout }})"
+          stdout: "Paquete {{ pkg.name }} ya estaba instalado (version: {{ pkg_check.stdout }})"
           stderr: ""
       when: pkg_check.rc == 0
 
     # ============================================
-    # PASO 8: VALIDACIÓN POST-INSTALACIÓN
+    # PASO 10: VALIDACION POST-INSTALACION (SIN BECOME)
     # ============================================
-    - name: "Linux | Ejecutar validación post-instalación de {{ pkg.name }}"
+    - name: "Linux | Ejecutar validacion post-instalacion de {{ pkg.name }}"
       ansible.builtin.shell: "{{ pkg.commands.post_install_validation }}"
       args:
         executable: /bin/bash
@@ -184,65 +224,38 @@
       failed_when: false
       changed_when: false
 
-    - name: "Linux | Ejecutar activación (si aplica)"
-      ansible.builtin.shell: "{{ pkg.commands.activation }}"
-      args:
-        executable: /bin/bash
-      register: activation_result
-      failed_when: false
-      changed_when: false
-      when: pkg.commands.activation is defined
-
-    - name: "Linux | Iniciar servicio (si aplica)"
-      ansible.builtin.shell: "{{ pkg.commands.start }}"
-      args:
-        executable: /bin/bash
-      register: start_result
-      failed_when: false
-      changed_when: false
-      when: pkg.commands.start is defined
-
-    - name: "Linux | Verificar estatus del servicio (si aplica)"
-      ansible.builtin.shell: "{{ pkg.commands.status }}"
-      args:
-        executable: /bin/bash
-      register: status_result
-      failed_when: false
-      changed_when: false
-      when: pkg.commands.status is defined
-
     # ============================================
-    # PASO 9: EXTRACCIÓN DE VERSIÓN (CORREGIDO - VERSIÓN ROBUSTA)
+    # PASO 11: EXTRACCION DE VERSION
     # ============================================
-    - name: "Linux | Obtener versión directamente con el comando {{ pkg.name }} --version"
+    - name: "Linux | Obtener version directamente con el comando {{ pkg.name }} --version"
       ansible.builtin.shell: |
         {{ pkg.name }} --version 2>/dev/null | head -1 | awk '{print $2}'
       register: version_cmd
       changed_when: false
       failed_when: false
 
-    - name: "Linux | Extraer versión instalada de {{ pkg.name }}"
+    - name: "Linux | Extraer version instalada de {{ pkg.name }}"
       ansible.builtin.set_fact:
         installed_version: "{{ version_cmd.stdout | default('') }}"
 
-    - name: "Linux | Mostrar versión extraída de {{ pkg.name }}"
+    - name: "Linux | Mostrar version extraida de {{ pkg.name }}"
       ansible.builtin.debug:
-        msg: "Versión detectada de {{ pkg.name }}: {{ installed_version }}"
+        msg: "Version detectada de {{ pkg.name }}: {{ installed_version }}"
         
     # ============================================
-    # PASO 10: VERIFICACIÓN MANUAL COMPLETA
+    # PASO 12: VERIFICACION MANUAL COMPLETA
     # ============================================
-    - name: "Linux | VERIFICACIÓN MANUAL - Comprobar si {{ pkg.name }} está instalado"
+    - name: "Linux | VERIFICACION MANUAL - Comprobar si {{ pkg.name }} esta instalado"
       ansible.builtin.shell: |
-        echo "========== VERIFICACIÓN DE INSTALACIÓN: {{ pkg.name }} =========="
+        echo "========== VERIFICACION DE INSTALACION: {{ pkg.name }} =========="
         echo "1. Verificando con which:"
         which {{ pkg.name }} 2>/dev/null && echo " {{ pkg.name }} encontrado en $(which {{ pkg.name }})" || echo " {{ pkg.name }} NO encontrado en PATH"
         echo ""
         echo "2. Verificando con rpm:"
         rpm -qa | grep -i {{ pkg.name }} || echo " {{ pkg.name }} no encontrado en RPM database"
         echo ""
-        echo "3. Verificando versión (si está instalado):"
-        {{ pkg.name }} --version 2>/dev/null || echo " No se pudo obtener versión"
+        echo "3. Verificando version (si esta instalado):"
+        {{ pkg.name }} --version 2>/dev/null || echo " No se pudo obtener version"
         echo ""
         echo "4. Verificando archivo copiado:"
         ls -la {{ dest_full_path }} 2>/dev/null || echo " Archivo {{ dest_full_path }} no existe"
@@ -252,21 +265,21 @@
         echo ""
         echo "6. Verificando archivos en directorio:"
         ls -la {{ dest_full_path | dirname }} | grep -i {{ pkg.name }} || echo "No hay archivos de {{ pkg.name }} en {{ dest_full_path | dirname }}"
-        echo "========== FIN VERIFICACIÓN =========="
+        echo "========== FIN VERIFICACION =========="
       args:
         executable: /bin/bash
       register: verification_check
       changed_when: false
       ignore_errors: true
 
-    - name: "Linux | Mostrar resultado de verificación de {{ pkg.name }}"
+    - name: "Linux | Mostrar resultado de verificacion de {{ pkg.name }}"
       ansible.builtin.debug:
         var: verification_check.stdout_lines
 
     # ============================================
-    # PASO 11: GUARDAR LOG COMPLETO
+    # PASO 13: GUARDAR LOG COMPLETO
     # ============================================
-    - name: "Linux | Guardar verificación en archivo de log"
+    - name: "Linux | Guardar verificacion en archivo de log"
       ansible.builtin.copy:
         content: |
           ========================================
@@ -276,17 +289,17 @@
           ========================================
           {{ verification_check.stdout }}
           ========================================
-          DIAGNÓSTICO ADICIONAL:
+          DIAGNOSTICO ADICIONAL:
           - Archivo destino: {{ dest_full_path }}
           - Existe archivo: {{ file_copied_check.stat.exists if file_copied_check.stat is defined else 'N/A' }}
           - Tamaño archivo: {{ file_copied_check.stat.size if file_copied_check.stat.exists else 'N/A' }} bytes
           - Dependencias instaladas: {{ pkg.dependencies | join(', ') if pkg.dependencies is defined else 'Ninguna' }}
-          - Código instalación: {{ install_result.rc }}
-          - Output instalación: {{ install_result.stdout }}
-          - Error instalación: {{ install_result.stderr }}
-          - Output validación: {{ validation_result.stdout }}
+          - Codigo instalacion: {{ install_result.rc }}
+          - Output instalacion: {{ install_result.stdout }}
+          - Error instalacion: {{ install_result.stderr }}
+          - Output validacion: {{ validation_result.stdout }}
           ========================================
-          INFORMACIÓN DEL FETCH:
+          INFORMACION DEL FETCH:
           - Archivo temporal: {{ controller_temp_path }}
           - Fetch exitoso: {{ fetch_check.stat.exists if fetch_check.stat is defined else 'N/A' }}
           ========================================
@@ -294,7 +307,7 @@
         mode: '0644'
 
     # ============================================
-    # PASO 12: CONSOLIDAR RESULTADOS
+    # PASO 14: CONSOLIDAR RESULTADOS
     # ============================================
     - name: "Linux | Anexar resultado de {{ pkg.name }} a la lista del host"
       ansible.builtin.set_fact:
@@ -324,7 +337,7 @@
     # ============================================
     # MANEJO DE ERRORES
     # ============================================
-    - name: "Linux | Error en el bloque de instalación de {{ pkg.name }}"
+    - name: "Linux | Error en el bloque de instalacion de {{ pkg.name }}"
       ansible.builtin.set_fact:
         host_installation_results: "{{ host_installation_results + [ error_result ] }}"
       vars:
@@ -346,4 +359,4 @@
           activation_output: ""
           status_output: ""
           verification_output: ""
-          message: "Error durante la instalación: {{ ansible_failed_result.msg | default('Error desconocido') }}"
+          message: "Error durante la instalacion: {{ ansible_failed_result.msg | default('Error desconocido') }}"
