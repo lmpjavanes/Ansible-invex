@@ -2,9 +2,8 @@
 {% for host_result in installation_results_windows | default([]) %}
 {% if host_result.packages is defined and host_result.packages | length > 0 %}
 {% for pkg in host_result.packages %}
-{% set mensaje_paquete = 'Paquete instalado previamente' if pkg.ya_instalado | default(false) else 'Paquete instalado correctamente' %}
 {% set script_mostrar = pkg.script_ejecutado if not pkg.ya_instalado | default(false) else 'N/A' %}
-"{{ host_result.host }}","{{ pkg.ambiente | default('N/A') }}","{{ pkg.package_name | default('') }}","{{ pkg.description | default('') }}","{{ pkg.vendor | default('') }}","{{ pkg.status | default(host_result.overall_status | default('unknown')) }}","{{ pkg.install_date | default('') }}","{{ pkg.version_installed | default('N/A') }}","{{ pkg.install_path | default('N/A') }}","{{ script_mostrar }}","{{ mensaje_paquete }} | {{ host_result.message | default(pkg.message | default('')) | regex_replace('"', '\\"') }}"
+"{{ host_result.host }}","{{ pkg.ambiente | default('N/A') }}","{{ pkg.package_name | default('') }}","{{ pkg.description | default('') }}","{{ pkg.vendor | default('') }}","{{ pkg.status | default(host_result.overall_status | default('unknown')) }}","{{ pkg.install_date | default('') }}","{{ pkg.version_installed | default('N/A') }}","{{ pkg.install_path | default('N/A') }}","{{ script_mostrar }}","{{ host_result.message | default(pkg.message | default('')) | regex_replace('"', '\\"') }}"
 {% endfor %}
 {% else %}
 "{{ host_result.host }}","N/A","N/A","N/A","N/A","{{ host_result.overall_status | default('unknown') }}","N/A","N/A","N/A","N/A","{{ host_result.message | default('Sin información') | regex_replace('"', '\\"') }}"

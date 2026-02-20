@@ -194,13 +194,16 @@
       changed_when: false
       when: pkg.commands.activation is defined
 
-    - name: "Linux | Mostrar estado de activacion"
+    - name: "Linux | Mostrar estado de activacion (si aplica)"
       ansible.builtin.debug:
         msg: "{{ pkg.name }} ya esta activado"
-      when: activation_check is defined and activation_check.rc == 0
+      when: 
+        - pkg.commands.activation is defined
+        - activation_check is defined
+        - activation_check.rc == 0
 
     # ============================================
-    # PASO 11: VERIFICAR ESTADO DEL SERVICIO
+    # PASO 11: VERIFICAR ESTADO DEL SERVICIO (si aplica)
     # ============================================
     - name: "Linux | Verificar si el servicio {{ pkg.name }} ya esta corriendo"
       ansible.builtin.shell: |
@@ -210,17 +213,20 @@
       changed_when: false
       when: pkg.commands.status is defined
 
-    - name: "Linux | Mostrar estado del servicio"
+    - name: "Linux | Mostrar estado del servicio (si aplica)"
       ansible.builtin.debug:
         msg: "Servicio {{ pkg.name }} ya esta corriendo"
-      when: service_check is defined and service_check.rc == 0
+      when: 
+        - pkg.commands.status is defined
+        - service_check is defined
+        - service_check.rc == 0
 
     # ============================================
-    # PASO 12: CONFIGURACION DEL PAQUETE
+    # PASO 12: CONFIGURACION DEL PAQUETE (solo si es necesario)
     # ============================================
-    - name: "Linux | Configurar {{ pkg.name }}"
+    - name: "Linux | Configurar {{ pkg.name }} (solo si es necesario)"
       block:
-        - name: "Ejecutar activacion"
+        - name: "Ejecutar activacion (si aplica y no esta activado)"
           ansible.builtin.shell: "{{ pkg.commands.activation }}"
           args:
             executable: /bin/bash
@@ -233,7 +239,7 @@
             - pkg.commands.activation is defined
             - activation_check.rc != 0
 
-        - name: "Iniciar servicio"
+        - name: "Iniciar servicio (si aplica y no esta corriendo)"
           ansible.builtin.shell: "{{ pkg.commands.start }}"
           args:
             executable: /bin/bash
@@ -246,7 +252,7 @@
             - pkg.commands.start is defined
             - service_check.rc != 0
 
-        - name: "Verificar estatus del servicio"
+        - name: "Verificar estatus del servicio (si aplica)"
           ansible.builtin.shell: "{{ pkg.commands.status }}"
           args:
             executable: /bin/bash
@@ -259,7 +265,9 @@
       become_method: sudo
       become_user: root
       when: 
-        - pkg.commands.activation is defined and activation_check.rc != 0 or pkg.commands.start is defined and service_check.rc != 0 or pkg.commands.status is defined
+        - (pkg.commands.activation is defined and activation_check.rc != 0) or
+          (pkg.commands.start is defined and service_check.rc != 0) or
+          (pkg.commands.status is defined)
 
     # ============================================
     # PASO 13: VALIDACION POST-INSTALACION
@@ -327,7 +335,7 @@
         var: verification_check.stdout_lines
 
     # ============================================
-    # PASO 16: GUARDAR LOG COMPLETO
+    # PASO 16: GUARDAR LOG COMPLETO (CORREGIDO)
     # ============================================
     - name: "Linux | Guardar verificacion en archivo de log"
       ansible.builtin.copy:
@@ -348,8 +356,8 @@
           - Output instalacion: {{ install_result.stdout }}
           - Error instalacion: {{ install_result.stderr }}
           - Output validacion: {{ validation_result.stdout }}
-          - Activacion necesaria: {{ 'No' if activation_check.rc == 0 else 'Si' if pkg.commands.activation is defined else 'N/A' }}
-          - Servicio necesario: {{ 'No' if service_check.rc == 0 else 'Si' if pkg.commands.start is defined else 'N/A' }}
+          - Activacion necesaria: {{ 'No' if activation_check is defined and activation_check.rc == 0 else 'Si' if pkg.commands.activation is defined else 'N/A' }}
+          - Servicio necesario: {{ 'No' if service_check is defined and service_check.rc == 0 else 'Si' if pkg.commands.start is defined else 'N/A' }}
           ========================================
           INFORMACION DEL FETCH:
           - Archivo temporal: {{ controller_temp_path }}
@@ -359,7 +367,7 @@
         mode: '0644'
 
     # ============================================
-    # PASO 17: CONSOLIDAR RESULTADOS
+    # PASO 17: CONSOLIDAR RESULTADOS (CORREGIDO)
     # ============================================
     - name: "Linux | Anexar resultado de {{ pkg.name }} a la lista del host"
       ansible.builtin.set_fact:
@@ -374,8 +382,8 @@
           version_installed: "{{ installed_version | default('') }}"
           ya_instalado: "{{ pkg_check.rc == 0 }}"
           dependencies: "{{ pkg.dependencies | default([]) }}"
-          activation_needed: "{{ 'No' if activation_check.rc == 0 else 'Si' if pkg.commands.activation is defined else 'N/A' }}"
-          service_needed: "{{ 'No' if service_check.rc == 0 else 'Si' if pkg.commands.start is defined else 'N/A' }}"
+          activation_needed: "{{ 'No' if activation_check is defined and activation_check.rc == 0 else 'Si' if pkg.commands.activation is defined else 'N/A' }}"
+          service_needed: "{{ 'No' if service_check is defined and service_check.rc == 0 else 'Si' if pkg.commands.start is defined else 'N/A' }}"
           copy_output: "{{ copy_result | default({}) }}"
           fetch_output: "{{ fetch_result | default({}) }}"
           deps_output: "{{ deps_install | default({}) }}"
