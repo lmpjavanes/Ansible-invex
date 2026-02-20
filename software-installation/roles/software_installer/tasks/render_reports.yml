@@ -14,7 +14,7 @@
   delegate_to: invd-ts-ansible
   run_once: true
 
-- name: Asegurar variables (evitar undefined)
+- name: Asegurar variables
   ansible.builtin.set_fact:
     installation_results_linux: "{{ installation_results_linux | default([]) }}"
     installation_results_windows: "{{ installation_results_windows | default([]) }}"
