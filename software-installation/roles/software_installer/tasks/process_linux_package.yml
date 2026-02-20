@@ -1,15 +1,8 @@
 ---
 # roles/software_installer/tasks/process_linux_package.yml
-#
-# Este archivo procesa un paquete Linux definido en vars (linux_packages),
-# copiando el RPM desde invd-ts-ansible -> controller -> host destino,
-# instalando (si no está instalado) y validando por comando post_install_validation.
-#
-# Soporta opcionalmente comandos de activation/start/status (ej. SentinelAgent).
 
-- name: "Linux | Inicializar variables"
+- name: "Linux | Inicializar variables por paquete (evitar undefined)"
   ansible.builtin.set_fact:
-    # Evitar undefined en logs aunque la instalación se omita (skip)
     install_result:
       rc: "N/A"
       stdout: ""
@@ -18,24 +11,26 @@
       rc: "N/A"
       stdout: ""
       stderr: ""
-    # Fallback de report_dir si el host no lo trae definido (normalmente se define en el play de consolidación)
     _report_dir_effective: "{{ report_dir | default('/tmp') }}"
 
 - name: "Linux | Procesando {{ pkg.name | default('paquete_sin_nombre') }}"
   vars:
     _pkg_name: "{{ pkg.name | default('') }}"
     _pkg_file: "{{ pkg.src_file | default('') }}"
+    _pkg_desc: "{{ pkg.description | default('') }}"
+    _pkg_vendor: "{{ pkg.vendor | default('') }}"
     _dest_path: "{{ pkg.dest_path | default('/tmp/') }}"
-    # Rutas
     source_full_path: "/software_repo/{{ _pkg_file }}"
     dest_full_path: "{{ _dest_path }}{{ _pkg_file }}"
     controller_temp_path: "/tmp/ansible_temp_{{ _pkg_file }}"
-    # Comandos (según tu YAML)
+
     _cmd_install_base: "{{ (pkg.commands.install | default('rpm -ivh')) | trim }}"
     _cmd_post_validate: "{{ (pkg.commands.post_install_validation | default('')) | trim }}"
     _cmd_activation: "{{ (pkg.commands.activation | default('')) | trim }}"
     _cmd_start: "{{ (pkg.commands.start | default('')) | trim }}"
     _cmd_status: "{{ (pkg.commands.status | default('')) | trim }}"
+
+    _version_regex: "{{ pkg.version_regex | default('') }}"
   block:
 
     # ===========================
@@ -111,9 +106,9 @@
       when: not copy_check.stat.exists
 
     # ===========================
-    # 4) Validación PRE: ¿ya está instalado?
+    # 4) Pre-validación: ¿ya está instalado?
     # ===========================
-    - name: "Linux | Pre-validación (paquete instalado antes) usando post_install_validation"
+    - name: "Linux | Pre-validación usando post_install_validation"
       ansible.builtin.shell: |
         set -o pipefail
         {{ _cmd_post_validate }}
@@ -126,16 +121,6 @@
     - name: "Linux | Determinar si el paquete ya está instalado"
       ansible.builtin.set_fact:
         package_installed: "{{ (pre_validation.rc | default(1)) == 0 }}"
-
-    - name: "Linux | Mostrar resultado de pre-validación"
-      ansible.builtin.debug:
-        msg:
-          - "Paquete: {{ _pkg_name }}"
-          - "post_install_validation: {{ _cmd_post_validate }}"
-          - "Instalado (antes): {{ package_installed }}"
-          - "RC: {{ pre_validation.rc | default('N/A') }}"
-          - "OUT: {{ pre_validation.stdout | default('') }}"
-          - "ERR: {{ pre_validation.stderr | default('') }}"
 
     # ===========================
     # 5) Instalación (solo si NO está instalado)
@@ -150,13 +135,8 @@
       when: not package_installed
       failed_when: false
 
-    - name: "Linux | Saltar instalación (ya instalado)"
-      ansible.builtin.debug:
-        msg: "El paquete {{ _pkg_name }} ya está instalado. Se omite instalación."
-      when: package_installed
-
     # ===========================
-    # 6) Validación POST: confirmar instalación
+    # 6) Post-validación
     # ===========================
     - name: "Linux | Post-validación usando post_install_validation"
       ansible.builtin.shell: |
@@ -180,8 +160,44 @@
         package_installed_after: "{{ (post_validation.rc | default(1)) == 0 }}"
 
     # ===========================
-    # 7) (Opcional) Activation / Start / Status (solo si existen en pkg.commands)
-    #    Preparado para SentinelAgent cuando lo descomentes.
+    # 6.1) Obtener versión (si hay version_regex)
+    # ===========================
+    - name: "Linux | Calcular versión instalada (desde stdout de validación)"
+      ansible.builtin.set_fact:
+        version_installed: >-
+          {{
+            (
+              (validation_result.stdout | default(''))
+              | regex_search(_version_regex, '\\1')
+            ) if (_version_regex | length > 0) else ''
+          }}
+
+    # ===========================
+    # 6.2) Obtener fecha de instalación (mejor esfuerzo)
+    # ===========================
+    - name: "Linux | Obtener fecha de instalación (rpm -qi) (best-effort)"
+      ansible.builtin.shell: |
+        set -o pipefail
+        rpm -qi "{{ _pkg_name }}" | awk -F': ' '/Install Date/ {print $2; exit 0}'
+      args:
+        executable: /bin/bash
+      register: install_date_cmd
+      changed_when: false
+      failed_when: false
+      when: package_installed_after | bool
+
+    - name: "Linux | Set install_date (best-effort)"
+      ansible.builtin.set_fact:
+        install_date: "{{ (install_date_cmd.stdout | default('')) | trim }}"
+      when: package_installed_after | bool
+
+    - name: "Linux | Set install_date default"
+      ansible.builtin.set_fact:
+        install_date: ""
+      when: install_date is not defined
+
+    # ===========================
+    # 7) (Opcional) Activation / Start / Status (SentinelAgent futuro)
     # ===========================
     - name: "Linux | Ejecutar activación (opcional)"
       ansible.builtin.shell: |
@@ -223,7 +239,43 @@
       failed_when: false
 
     # ===========================
-    # 8) Limpieza (opcional)
+    # 8) Construir resultado de este paquete y APPEND a host_installation_results
+    # ===========================
+    - name: "Linux | Construir status final del paquete"
+      ansible.builtin.set_fact:
+        _pkg_status: "{{ 'success' if (package_installed_after | bool) else 'failed' }}"
+
+    - name: "Linux | Construir mensaje de paquete (para reportes)"
+      ansible.builtin.set_fact:
+        _pkg_message: >-
+          {% if package_installed | bool %}
+          Paquete instalado previamente
+          {% elif package_installed_after | bool %}
+          Paquete instalado correctamente
+          {% else %}
+          Falló instalación/validación
+          {% endif %}
+
+    - name: "Linux | Agregar resultado del paquete a host_installation_results"
+      ansible.builtin.set_fact:
+        host_installation_results: >-
+          {{
+            (host_installation_results | default([])) + [
+              {
+                'package_name': _pkg_name,
+                'description': _pkg_desc,
+                'vendor': _pkg_vendor,
+                'status': _pkg_status,
+                'ya_instalado': (package_installed | default(false)),
+                'install_date': (install_date | default('')),
+                'version_installed': (version_installed | default('')),
+                'message': _pkg_message
+              }
+            ]
+          }}
+
+    # ===========================
+    # 9) Limpieza (opcional)
     # ===========================
     - name: "Linux | Eliminar archivo copiado en destino (opcional)"
       ansible.builtin.file:
@@ -239,7 +291,7 @@
       run_once: true
 
     # ===========================
-    # 9) Log por host (no debe fallar si report_dir no existe)
+    # 10) Log por host (best-effort)
     # ===========================
     - name: "Linux | Guardar verificación en archivo de log"
       ansible.builtin.copy:
@@ -267,9 +319,8 @@
           OUT post-validación: {{ validation_result.stdout | default('') }}
           ERR post-validación: {{ validation_result.stderr | default('') }}
           --------------------------------------------
-          Activation (si aplica): {{ _cmd_activation if (_cmd_activation | length > 0) else 'N/A' }}
-          Start (si aplica): {{ _cmd_start if (_cmd_start | length > 0) else 'N/A' }}
-          Status (si aplica): {{ _cmd_status if (_cmd_status | length > 0) else 'N/A' }}
+          Versión instalada: {{ version_installed | default('') }}
+          Fecha instalación: {{ install_date | default('') }}
           ============================================
 
   rescue:
@@ -278,6 +329,25 @@
         msg:
           - "Ocurrió un error al procesar el paquete {{ pkg.name | default('N/A') }}"
           - "Error: {{ ansible_failed_result | default({}) }}"
+
+    # Aun con error, agregamos un registro para que el reporte muestre el paquete y el fallo
+    - name: "Linux | Agregar resultado fallido del paquete a host_installation_results (para reporte)"
+      ansible.builtin.set_fact:
+        host_installation_results: >-
+          {{
+            (host_installation_results | default([])) + [
+              {
+                'package_name': (pkg.name | default('N/A')),
+                'description': (pkg.description | default('')),
+                'vendor': (pkg.vendor | default('')),
+                'status': 'failed',
+                'ya_instalado': false,
+                'install_date': '',
+                'version_installed': '',
+                'message': 'Falló instalación/validación'
+              }
+            ]
+          }}
 
     - name: "Linux | Guardar error en log (fallback seguro)"
       ansible.builtin.copy:
