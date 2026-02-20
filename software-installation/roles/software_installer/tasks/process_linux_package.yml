@@ -335,7 +335,7 @@
         var: verification_check.stdout_lines
 
     # ============================================
-    # PASO 16: GUARDAR LOG COMPLETO (CORREGIDO)
+    # PASO 16: GUARDAR LOG COMPLETO (VERSIÓN FINAL CORREGIDA)
     # ============================================
     - name: "Linux | Guardar verificacion en archivo de log"
       ansible.builtin.copy:
@@ -356,8 +356,8 @@
           - Output instalacion: {{ install_result.stdout }}
           - Error instalacion: {{ install_result.stderr }}
           - Output validacion: {{ validation_result.stdout }}
-          - Activacion necesaria: {{ 'No' if activation_check is defined and activation_check.rc == 0 else 'Si' if pkg.commands.activation is defined else 'N/A' }}
-          - Servicio necesario: {{ 'No' if service_check is defined and service_check.rc == 0 else 'Si' if pkg.commands.start is defined else 'N/A' }}
+          - Activacion necesaria: "{{ 'No' if activation_check is defined and activation_check.rc == 0 else 'Si' if pkg.commands.activation is defined else 'N/A' }}"
+          - Servicio necesario: "{{ 'No' if service_check is defined and service_check.rc == 0 else 'Si' if pkg.commands.start is defined else 'N/A' }}"
           ========================================
           INFORMACION DEL FETCH:
           - Archivo temporal: {{ controller_temp_path }}
@@ -367,7 +367,7 @@
         mode: '0644'
 
     # ============================================
-    # PASO 17: CONSOLIDAR RESULTADOS (CORREGIDO)
+    # PASO 17: CONSOLIDAR RESULTADOS (VERSIÓN FINAL CORREGIDA)
     # ============================================
     - name: "Linux | Anexar resultado de {{ pkg.name }} a la lista del host"
       ansible.builtin.set_fact:
@@ -394,7 +394,7 @@
           activation_output: "{{ activation_result.stdout | default('') }}"
           status_output: "{{ status_result.stdout | default('') }}"
           verification_output: "{{ verification_check.stdout | default('') }}"
-          message: ""
+          message: "{{ 'Paquete instalado previamente' if pkg_check.rc == 0 else 'Paquete instalado correctamente' }}"
 
   rescue:
     # ============================================
@@ -411,6 +411,7 @@
           status: "failed"
           install_date: "{{ ansible_date_time.iso8601 }}"
           version_installed: ""
+          ya_instalado: false
           dependencies: "{{ pkg.dependencies | default([]) }}"
           copy_output: {}
           fetch_output: {}

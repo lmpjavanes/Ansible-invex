@@ -238,7 +238,7 @@
       script_output: "{{ script_execution.stdout | default('') }}"
       script_error: "{{ script_execution.stderr | default('') }}"
       files_copied: "{{ win_config.windows_files_to_copy | join(', ') }}"
-      message: "{{ mensaje_base }} | Ejecutado script {{ script_a_ejecutar | basename if not ya_instalado else 'N/A' }} en ambiente {{ ambiente_detectado }}. Limpieza completada."
+      message: "{{ mensaje_base }} | Limpieza completada."
 
 - name: "Windows | Determinar estado general del host"
   ansible.builtin.set_fact:
@@ -256,4 +256,4 @@
       overall_status: "{{ overall_host_status }}"
       ambiente: "{{ ambiente_detectado }}"
       packages: "{{ host_installation_results }}"
-      message: "{{ mensaje_base }} | Ejecutado script {{ script_a_ejecutar | basename if not ya_instalado else 'N/A' }} en ambiente {{ ambiente_detectado }}. Archivos temporales eliminados."
+      message: "{{ mensaje_base }} | Archivos temporales eliminados."
