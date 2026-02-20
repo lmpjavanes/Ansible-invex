@@ -1,4 +1,4 @@
-"Host","Paquete","Descripción","Proveedor","Estado","Fecha Instalación","Versión","Mensaje"
+"Host","Paquete","Descripción","Proveedor","Estado","Fecha Instalación","Versión","Observaciones"
 {% for host_result in installation_results_linux | default([]) %}
 {% if host_result.packages is defined and host_result.packages | length > 0 %}
 {% for pkg in host_result.packages %}

@@ -1,4 +1,4 @@
-"Host","Ambiente","Paquete","Descripción","Proveedor","Estado","Fecha Instalación","Versión","Instalado en","Script Ejecutado","Mensaje"
+"Host","Ambiente","Paquete","Descripción","Proveedor","Estado","Fecha Instalación","Versión","Instalado en","Script Ejecutado","Observaciones"
 {% for host_result in installation_results_windows | default([]) %}
 {% if host_result.packages is defined and host_result.packages | length > 0 %}
 {% for pkg in host_result.packages %}
