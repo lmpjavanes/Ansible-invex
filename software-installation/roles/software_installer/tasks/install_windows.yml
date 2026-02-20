@@ -198,7 +198,7 @@
 
 - name: "Windows | Mostrar resultado de la limpieza"
   ansible.builtin.debug:
-    msg: "🧹 Archivo {{ item.item }} - {{ 'Eliminado' if not item.stat.exists else 'Aun existe' }}"
+    msg: "Archivo {{ item.item }} - {{ 'Eliminado' if not item.stat.exists else 'Aun existe' }}"
   loop: "{{ verify_cleanup.results }}"
 
 # ============================================
