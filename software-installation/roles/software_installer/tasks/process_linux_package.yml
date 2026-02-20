@@ -1,4 +1,5 @@
 ---
+# roles/software_installer/tasks/process_linux_package.yml
 
 - name: "Linux | Procesando {{ pkg.name }}"
   vars:
@@ -146,11 +147,11 @@
       when: pkg_check.rc == 0
 
     # ============================================
-    # PASO 8: BLOQUE DE COMANDOS PRIVILEGIADOS
+    # PASO 8: INSTALACION DEL PAQUETE
     # ============================================
-    - name: "Linux | Ejecutar comandos con privilegios para {{ pkg.name }}"
+    - name: "Linux | Instalar paquete {{ pkg.name }} "
       block:
-        - name: "Instalar paquete (si no esta instalado)"
+        - name: "Instalar paquete"
           ansible.builtin.shell: |
             set -x
             echo "=== INICIANDO INSTALACION DE {{ pkg.name }} ==="
@@ -166,27 +167,86 @@
           register: install_result
           failed_when: false
           changed_when: install_result.rc == 0
-          when: pkg_check.rc != 0
+      become: true
+      become_method: sudo
+      become_user: root
+      when: pkg_check.rc != 0
 
-        - name: "Ejecutar activacion (si aplica)"
+    # ============================================
+    # PASO 9: REGISTRAR RESULTADO PARA PAQUETES YA INSTALADOS
+    # ============================================
+    - name: "Linux | Registrar resultado de instalacion"
+      ansible.builtin.set_fact:
+        install_result: 
+          rc: 0
+          stdout: "Paquete {{ pkg.name }} ya estaba instalado (version: {{ pkg_check.stdout }})"
+          stderr: ""
+      when: pkg_check.rc == 0
+
+    # ============================================
+    # PASO 10: VERIFICAR ESTADO DE ACTIVACION (si aplica)
+    # ============================================
+    - name: "Linux | Verificar si {{ pkg.name }} ya esta activado"
+      ansible.builtin.shell: |
+        /opt/sentinelone/bin/sentinelctl control status 2>/dev/null | grep -i "Status: Active"
+      register: activation_check
+      failed_when: false
+      changed_when: false
+      when: pkg.commands.activation is defined
+
+    - name: "Linux | Mostrar estado de activacion"
+      ansible.builtin.debug:
+        msg: "{{ pkg.name }} ya esta activado"
+      when: activation_check is defined and activation_check.rc == 0
+
+    # ============================================
+    # PASO 11: VERIFICAR ESTADO DEL SERVICIO
+    # ============================================
+    - name: "Linux | Verificar si el servicio {{ pkg.name }} ya esta corriendo"
+      ansible.builtin.shell: |
+        /opt/sentinelone/bin/sentinelctl control status 2>/dev/null | grep -i "Service: Running"
+      register: service_check
+      failed_when: false
+      changed_when: false
+      when: pkg.commands.status is defined
+
+    - name: "Linux | Mostrar estado del servicio"
+      ansible.builtin.debug:
+        msg: "Servicio {{ pkg.name }} ya esta corriendo"
+      when: service_check is defined and service_check.rc == 0
+
+    # ============================================
+    # PASO 12: CONFIGURACION DEL PAQUETE
+    # ============================================
+    - name: "Linux | Configurar {{ pkg.name }}"
+      block:
+        - name: "Ejecutar activacion"
           ansible.builtin.shell: "{{ pkg.commands.activation }}"
           args:
             executable: /bin/bash
           register: activation_result
           failed_when: false
           changed_when: false
-          when: pkg.commands.activation is defined
+          async: 60
+          poll: 5
+          when: 
+            - pkg.commands.activation is defined
+            - activation_check.rc != 0
 
-        - name: "Iniciar servicio (si aplica)"
+        - name: "Iniciar servicio"
           ansible.builtin.shell: "{{ pkg.commands.start }}"
           args:
             executable: /bin/bash
           register: start_result
           failed_when: false
           changed_when: false
-          when: pkg.commands.start is defined
+          async: 30
+          poll: 5
+          when: 
+            - pkg.commands.start is defined
+            - service_check.rc != 0
 
-        - name: "Verificar estatus del servicio (si aplica)"
+        - name: "Verificar estatus del servicio"
           ansible.builtin.shell: "{{ pkg.commands.status }}"
           args:
             executable: /bin/bash
@@ -198,21 +258,11 @@
       become: true
       become_method: sudo
       become_user: root
-      when: pkg_check.rc != 0 or pkg.commands.activation is defined or pkg.commands.start is defined or pkg.commands.status is defined
+      when: 
+        - pkg.commands.activation is defined and activation_check.rc != 0 or pkg.commands.start is defined and service_check.rc != 0 or pkg.commands.status is defined
 
     # ============================================
-    # PASO 9: REGISTRAR RESULTADO PARA PAQUETES YA INSTALADOS
-    # ============================================
-    - name: "Linux | Registrar resultado de instalacion (para paquetes ya instalados)"
-      ansible.builtin.set_fact:
-        install_result: 
-          rc: 0
-          stdout: "Paquete {{ pkg.name }} ya estaba instalado (version: {{ pkg_check.stdout }})"
-          stderr: ""
-      when: pkg_check.rc == 0
-
-    # ============================================
-    # PASO 10: VALIDACION POST-INSTALACION
+    # PASO 13: VALIDACION POST-INSTALACION
     # ============================================
     - name: "Linux | Ejecutar validacion post-instalacion de {{ pkg.name }}"
       ansible.builtin.shell: "{{ pkg.commands.post_install_validation }}"
@@ -223,7 +273,7 @@
       changed_when: false
 
     # ============================================
-    # PASO 11: EXTRACCION DE VERSION
+    # PASO 14: EXTRACCION DE VERSION
     # ============================================
     - name: "Linux | Obtener version directamente con el comando {{ pkg.name }} --version"
       ansible.builtin.shell: |
@@ -241,7 +291,7 @@
         msg: "Version detectada de {{ pkg.name }}: {{ installed_version }}"
         
     # ============================================
-    # PASO 12: VERIFICACION MANUAL COMPLETA
+    # PASO 15: VERIFICACION MANUAL COMPLETA
     # ============================================
     - name: "Linux | VERIFICACION MANUAL - Comprobar si {{ pkg.name }} esta instalado"
       ansible.builtin.shell: |
@@ -263,6 +313,8 @@
         echo ""
         echo "6. Verificando archivos en directorio:"
         ls -la {{ dest_full_path | dirname }} | grep -i {{ pkg.name }} || echo "No hay archivos de {{ pkg.name }} en {{ dest_full_path | dirname }}"
+        echo "7. Verificando estado de activacion:"
+        /opt/sentinelone/bin/sentinelctl control status 2>/dev/null | head -2 || echo "No se pudo verificar activacion"
         echo "========== FIN VERIFICACION =========="
       args:
         executable: /bin/bash
@@ -275,7 +327,7 @@
         var: verification_check.stdout_lines
 
     # ============================================
-    # PASO 13: GUARDAR LOG COMPLETO
+    # PASO 16: GUARDAR LOG COMPLETO
     # ============================================
     - name: "Linux | Guardar verificacion en archivo de log"
       ansible.builtin.copy:
@@ -296,6 +348,8 @@
           - Output instalacion: {{ install_result.stdout }}
           - Error instalacion: {{ install_result.stderr }}
           - Output validacion: {{ validation_result.stdout }}
+          - Activacion necesaria: {{ 'No' if activation_check.rc == 0 else 'Si' if pkg.commands.activation is defined else 'N/A' }}
+          - Servicio necesario: {{ 'No' if service_check.rc == 0 else 'Si' if pkg.commands.start is defined else 'N/A' }}
           ========================================
           INFORMACION DEL FETCH:
           - Archivo temporal: {{ controller_temp_path }}
@@ -305,7 +359,7 @@
         mode: '0644'
 
     # ============================================
-    # PASO 14: CONSOLIDAR RESULTADOS
+    # PASO 17: CONSOLIDAR RESULTADOS
     # ============================================
     - name: "Linux | Anexar resultado de {{ pkg.name }} a la lista del host"
       ansible.builtin.set_fact:
@@ -318,7 +372,10 @@
           status: "{{ 'success' if validation_result.rc is defined and validation_result.rc == 0 else 'failed' }}"
           install_date: "{{ ansible_date_time.iso8601 }}"
           version_installed: "{{ installed_version | default('') }}"
+          ya_instalado: "{{ pkg_check.rc == 0 }}"
           dependencies: "{{ pkg.dependencies | default([]) }}"
+          activation_needed: "{{ 'No' if activation_check.rc == 0 else 'Si' if pkg.commands.activation is defined else 'N/A' }}"
+          service_needed: "{{ 'No' if service_check.rc == 0 else 'Si' if pkg.commands.start is defined else 'N/A' }}"
           copy_output: "{{ copy_result | default({}) }}"
           fetch_output: "{{ fetch_result | default({}) }}"
           deps_output: "{{ deps_install | default({}) }}"

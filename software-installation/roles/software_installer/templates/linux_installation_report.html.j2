@@ -38,13 +38,25 @@
           <td class="{{ 'bad' if (pkg.status | default('')) in ['failed', 'unreachable', 'unavailable'] else '' }}">{{ pkg.status | default(host_result.overall_status | default('')) }}</td>
           <td>{{ pkg.install_date | default('') }}</td>
           <td>{{ pkg.version_installed | default('') }}</td>
-          <td class="{{ 'bad' if (host_result.overall_status | default('')) in ['failed', 'unreachable', 'unavailable'] else '' }}">{{ host_result.message | default(pkg.message | default('')) }}</td>
+          <td class="{{ 'bad' if (host_result.overall_status | default('')) in ['failed', 'unreachable', 'unavailable'] else '' }}">
+            {% if pkg.ya_instalado | default(false) %}
+              Paquete instalado previamente | {{ host_result.message | default(pkg.message | default('')) }}
+            {% else %}
+              Paquete instalado correctamente | {{ host_result.message | default(pkg.message | default('')) }}
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       {% else %}
+        {# Host sin paquetes procesados o no disponible #}
         <tr>
           <td>{{ host_result.host | default('') }}</td>
-          <td colspan="6" style="font-style: italic;">Sin paquetes procesados</td>
+          <td>N/A</td>
+          <td>N/A</td>
+          <td>N/A</td>
+          <td class="{{ 'bad' if (host_result.overall_status | default('')) in ['failed', 'unreachable', 'unavailable'] else '' }}">{{ host_result.overall_status | default('unknown') }}</td>
+          <td>N/A</td>
+          <td>N/A</td>
           <td class="{{ 'bad' if (host_result.overall_status | default('')) in ['failed', 'unreachable', 'unavailable'] else '' }}">{{ host_result.message | default('Sin información') }}</td>
         </tr>
       {% endif %}

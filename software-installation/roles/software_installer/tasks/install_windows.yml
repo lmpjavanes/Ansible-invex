@@ -1,4 +1,5 @@
 ---
+# roles/software_installer/tasks/install_windows.yml
 
 - name: "Windows | Cargar configuracion de paquetes"
   ansible.builtin.include_vars:
@@ -51,7 +52,7 @@
   register: verify_copy
 
 # ============================================
-# PASO 4: DETERMINAR Y EJECUTAR SCRIPT SEGUN GRUPO
+# PASO 4: DETERMINAR SCRIPT SEGUN GRUPO
 # ============================================
 - name: "Windows | Determinar script a ejecutar segun el grupo"
   ansible.builtin.set_fact:
@@ -72,17 +73,47 @@
       - "Script a ejecutar: {{ script_a_ejecutar }}"
       - "Ruta de trabajo: {{ win_config.windows_dest_path }}"
 
-- name: "Windows | Ejecutar script de instalacion (como administrador)"
+# ============================================
+# PASO 4.5: VERIFICAR SI NCPA YA ESTA INSTALADO
+# ============================================
+- name: "Windows | Verificar si NCPA ya esta instalado"
+  ansible.windows.win_stat:
+    path: "C:\\Program Files\\Nagios\\NCPA\\ncpa.exe"
+  register: ncpa_pre_check
+
+- name: "Windows | Establecer flag de instalacion previa"
+  ansible.builtin.set_fact:
+    ya_instalado: "{{ ncpa_pre_check.stat.exists }}"
+
+- name: "Windows | Mostrar estado de instalacion previa"
+  ansible.builtin.debug:
+    msg: "NCPA ya esta instalado previamente - se omitira la instalacion"
+  when: ya_instalado
+
+# ============================================
+# PASO 4.6: EJECUTAR SCRIPT SOLO SI NO ESTA INSTALADO
+# ============================================
+- name: "Windows | Ejecutar script de instalacion (solo si no esta instalado)"
   ansible.windows.win_command: "{{ script_a_ejecutar }}"
   args:
     chdir: "{{ win_config.windows_dest_path }}"
   register: script_execution
   failed_when: false
   changed_when: script_execution.rc == 0
-  when: script_a_ejecutar != ""
+  when: 
+    - script_a_ejecutar != ""
+    - not ya_instalado
   become: true
   become_method: runas
   become_user: SYSTEM
+
+- name: "Windows | Registrar resultado para cuando ya estaba instalado"
+  ansible.builtin.set_fact:
+    script_execution: 
+      rc: 0
+      stdout: "NCPA ya estaba instalado previamente - script no ejecutado"
+      stderr: ""
+  when: ya_instalado
 
 - name: "Windows | Mostrar resultado de la ejecucion"
   ansible.builtin.debug:
@@ -95,7 +126,7 @@
 # ============================================
 # PASO 5: VERIFICAR INSTALACION Y SERVICIO
 # ============================================
-- name: "Windows | Verificar si NCPA esta instalado"
+- name: "Windows | Verificar si NCPA esta instalado (post-instalacion)"
   ansible.windows.win_stat:
     path: "C:\\Program Files\\Nagios\\NCPA\\ncpa.exe"
   register: ncpa_installed
@@ -137,11 +168,12 @@
       - "DIAGNOSTICO DE INSTALACION:"
       - "NCPA instalado: {{ 'Si' if ncpa_installed.stat.exists else 'No' }}"
       - "Version: {{ ncpa_version.stdout | default('N/A') }}"
+      - "Estado servicio: {{ service_status.stdout | default('N/A') }}"
 
 # ============================================
 # PASO 6: LIMPIAR ARCHIVOS TEMPORALES
 # ============================================
-- name: "Windows | Listar archivos en C: \ sys \ antes de limpiar"
+- name: "Windows | Listar archivos en C:\ sys\ antes de limpiar"
   ansible.windows.win_shell: |
     Write-Output "Archivos en {{ win_config.windows_dest_path }}:"
     Get-ChildItem "{{ win_config.windows_dest_path }}" | Select-Object Name, Length | Format-Table -AutoSize
@@ -172,6 +204,15 @@
 # ============================================
 # PASO 7: CONSOLIDAR RESULTADOS
 # ============================================
+- name: "Windows | Determinar mensaje para el reporte"
+  ansible.builtin.set_fact:
+    mensaje_base: >-
+      {% if ya_instalado %}
+      Paquete instalado previamente
+      {% else %}
+      Paquete instalado correctamente
+      {% endif %}
+
 - name: "Windows | Construir resultado de instalacion"
   ansible.builtin.set_fact:
     host_installation_results: "{{ host_installation_results + [ pkg_result ] }}"
@@ -179,16 +220,17 @@
     pkg_result:
       package_name: "NCPA Agent"
       ambiente: "{{ ambiente_detectado }}"
-      script_ejecutado: "{{ script_a_ejecutar | basename }}"
-      status: "{{ 'success' if script_execution.rc == 0 and ncpa_installed.stat.exists else 'failed' }}"
+      script_ejecutado: "{{ script_a_ejecutar | basename if not ya_instalado else 'N/A' }}"
+      status: "{{ 'success' if (script_execution.rc == 0 or ya_instalado) and ncpa_installed.stat.exists else 'failed' }}"
       install_date: "{{ ansible_date_time.iso8601 }}"
+      ya_instalado: "{{ ya_instalado | default(false) }}"
       # CAMPOS DE VERIFICACION
       version_installed: "{{ ncpa_version.stdout | default('N/A') | trim }}"
       service_status: "{{ service_status.stdout | default('No instalado') | trim }}"
       port_status: "{{ port_check.stdout | default('N/A') }}"
       instalado: "{{ 'Si' if ncpa_installed.stat.exists else 'No' }}"
       install_path: "C:\\Program Files\\Nagios\\NCPA"
-      # CAMPOS DE LIMPIEZA (NUEVO)
+      # CAMPOS DE LIMPIEZA
       cleanup_performed: "{{ 'Si' if cleanup_result is defined else 'No' }}"
       files_cleaned: "{{ win_config.windows_files_to_copy | join(', ') }}"
       # Informacion de ejecucion
@@ -196,7 +238,7 @@
       script_output: "{{ script_execution.stdout | default('') }}"
       script_error: "{{ script_execution.stderr | default('') }}"
       files_copied: "{{ win_config.windows_files_to_copy | join(', ') }}"
-      message: "Ejecutado script {{ script_a_ejecutar | basename }} en ambiente {{ ambiente_detectado }}. Limpieza completada."
+      message: "{{ mensaje_base }} | Ejecutado script {{ script_a_ejecutar | basename if not ya_instalado else 'N/A' }} en ambiente {{ ambiente_detectado }}. Limpieza completada."
 
 - name: "Windows | Determinar estado general del host"
   ansible.builtin.set_fact:
@@ -214,4 +256,4 @@
       overall_status: "{{ overall_host_status }}"
       ambiente: "{{ ambiente_detectado }}"
       packages: "{{ host_installation_results }}"
-      message: "Ejecutado script {{ script_a_ejecutar | basename }} en ambiente {{ ambiente_detectado }}. Archivos temporales eliminados."
+      message: "{{ mensaje_base }} | Ejecutado script {{ script_a_ejecutar | basename if not ya_instalado else 'N/A' }} en ambiente {{ ambiente_detectado }}. Archivos temporales eliminados."
