@@ -106,7 +106,7 @@
       when: not copy_check.stat.exists
 
     # ===========================
-    # 4) Pre-validación: ¿ya está instalado?
+    # 4) Pre-validacion
     # ===========================
     - name: "Linux | Pre-validación usando post_install_validation"
       ansible.builtin.shell: |
@@ -123,7 +123,7 @@
         package_installed: "{{ (pre_validation.rc | default(1)) == 0 }}"
 
     # ===========================
-    # 5) Instalación (solo si NO está instalado)
+    # 5) Instalacion
     # ===========================
     - name: "Linux | Instalar paquete (si no está instalado)"
       ansible.builtin.shell: |
@@ -136,7 +136,7 @@
       failed_when: false
 
     # ===========================
-    # 6) Post-validación
+    # 6) Post-validacion
     # ===========================
     - name: "Linux | Post-validación usando post_install_validation"
       ansible.builtin.shell: |
@@ -160,22 +160,24 @@
         package_installed_after: "{{ (post_validation.rc | default(1)) == 0 }}"
 
     # ===========================
-    # 6.1) Obtener versión (si hay version_regex)
+    # 6.1) Obtener version
     # ===========================
-    - name: "Linux | Calcular versión instalada (desde stdout de validación)"
+    - name: "Linux | Calcular version instalada"
       ansible.builtin.set_fact:
-        version_installed: >-
+        _version_matches: >-
           {{
-            (
-              (validation_result.stdout | default(''))
-              | regex_search(_version_regex, '\\1')
-            ) if (_version_regex | length > 0) else ''
+            (validation_result.stdout | default('') | regex_findall(_version_regex))
+            if (_version_regex | default('') | length > 0) else []
           }}
+
+    - name: "Linux | Set version_installed (primer match o vacío)"
+      ansible.builtin.set_fact:
+        version_installed: "{{ (_version_matches | first) | default('') }}"
 
     # ===========================
     # 6.2) Obtener fecha de instalación (mejor esfuerzo)
     # ===========================
-    - name: "Linux | Obtener fecha de instalación (rpm -qi) (best-effort)"
+    - name: "Linux | Obtener fecha de instalacion"
       ansible.builtin.shell: |
         set -o pipefail
         rpm -qi "{{ _pkg_name }}" | awk -F': ' '/Install Date/ {print $2; exit 0}'
@@ -186,7 +188,7 @@
       failed_when: false
       when: package_installed_after | bool
 
-    - name: "Linux | Set install_date (best-effort)"
+    - name: "Linux | Set install_date"
       ansible.builtin.set_fact:
         install_date: "{{ (install_date_cmd.stdout | default('')) | trim }}"
       when: package_installed_after | bool
@@ -199,7 +201,7 @@
     # ===========================
     # 7) (Opcional) Activation / Start / Status (SentinelAgent futuro)
     # ===========================
-    - name: "Linux | Ejecutar activación (opcional)"
+    - name: "Linux | Ejecutar activacion"
       ansible.builtin.shell: |
         set -o pipefail
         {{ _cmd_activation }}
@@ -212,7 +214,7 @@
       changed_when: false
       failed_when: false
 
-    - name: "Linux | Iniciar servicio/agente (opcional)"
+    - name: "Linux | Iniciar servicio/agente"
       ansible.builtin.shell: |
         set -o pipefail
         {{ _cmd_start }}
@@ -225,7 +227,7 @@
       changed_when: false
       failed_when: false
 
-    - name: "Linux | Verificar status (opcional)"
+    - name: "Linux | Verificar status"
       ansible.builtin.shell: |
         set -o pipefail
         {{ _cmd_status }}
@@ -245,7 +247,7 @@
       ansible.builtin.set_fact:
         _pkg_status: "{{ 'success' if (package_installed_after | bool) else 'failed' }}"
 
-    - name: "Linux | Construir mensaje de paquete (para reportes)"
+    - name: "Linux | Construir mensaje de paquete"
       ansible.builtin.set_fact:
         _pkg_message: >-
           {% if package_installed | bool %}
@@ -275,9 +277,9 @@
           }}
 
     # ===========================
-    # 9) Limpieza (opcional)
+    # 9) Limpieza
     # ===========================
-    - name: "Linux | Eliminar archivo copiado en destino (opcional)"
+    - name: "Linux | Eliminar archivo copiado en destino"
       ansible.builtin.file:
         path: "{{ dest_full_path }}"
         state: absent
@@ -291,7 +293,7 @@
       run_once: true
 
     # ===========================
-    # 10) Log por host (best-effort)
+    # 10) Log por host
     # ===========================
     - name: "Linux | Guardar verificación en archivo de log"
       ansible.builtin.copy:
@@ -349,7 +351,7 @@
             ]
           }}
 
-    - name: "Linux | Guardar error en log (fallback seguro)"
+    - name: "Linux | Guardar error en log"
       ansible.builtin.copy:
         dest: "{{ _report_dir_effective }}/linux_software_install_{{ inventory_hostname }}.log"
         content: |
