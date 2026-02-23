@@ -3,7 +3,7 @@
 
 # Ruta base en el NFS accesible desde los servidores Windows
 # windows_software_source: "\\\\kirov01\\SISTEMASOPERATIVOS_WINDOWSLINUX\\Software\\Agente_Nagios\\Nagios"
-windows_software_source: "\\\\VBOXSVR\\kirov01\\SISTEMASOPERATIVOS_WINDOWSLINUX\\Software\\Agente_Nagios\\Nagios"
+windows_software_source: "\\\\VBOXSVR\\kirov01\\SISTEMASOPERATIVOS_WINDOWSLINUX\\Software\\Agente_Nagios\\Nagios\\example\\hi"
 
 # Archivos a copiar desde la fuente
 windows_files_to_copy:
