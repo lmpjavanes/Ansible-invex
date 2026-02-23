@@ -42,18 +42,31 @@ linux_packages:
     
   # Paquete: SentinelAgent (ejemplo para futuro)
   # - name: "SentinelAgent"
-  #   description: "Agente de seguridad SentinelOne"
+  #   src_file: "SentinelAgent_linux_x86_64.rpm"
+  #   description: "SentinelOne Endpoint Protection Agent"
   #   vendor: "SentinelOne"
-  #   src_file: "SentinelAgent_linux_x86_64_v25_1_3_6.rpm"
-  #   dest_path: "{{ ansible_env.HOME }}/"
-  #   package_type: "rpm"
-  #   dependencies:
-  #     - "glibc"
-  #     - "libstdc++"
+  #   dest_path: "/tmp/"
+  #   cleanup_dest: true
+
   #   commands:
   #     install: "rpm -ivh"
-  #     post_install_validation: "rpm -qa | grep -i SentinelAgent"
+  #     post_install_validation: "rpm -qa | grep -i '^SentinelAgent'"
   #     activation: "/opt/sentinelone/bin/sentinelctl management token set {{ sentinelone_token }}"
   #     start: "/opt/sentinelone/bin/sentinelctl control start"
   #     status: "/opt/sentinelone/bin/sentinelctl control status"
-  #   version_regex: "SentinelAgent-(\\d+.*)"
+
+  #   # Para extraer versión desde: SentinelAgent-23.2.1.12345.x86_64
+  #   version_regex: "^SentinelAgent-([0-9]+\\.[0-9]+\\.[0-9]+)"
+
+  #   # -------- Lógica especial para activación ----------
+  #   activation_check:
+  #     cmd: "/opt/sentinelone/bin/sentinelctl control status"
+  #     success_regex: "Agent state\\s+Enabled"
+
+  #   # -------- Timeouts (evita que se quede 15 min colgado) ----------
+  #   activation_timeout_sec: 180
+  #   start_timeout_sec: 180
+  #   status_timeout_sec: 60
+
+  #   # Solo activar cuando se instala por primera vez
+  #   force_activation: false
