@@ -268,11 +268,16 @@
         _win_error_msg: >-
           {{
             (
-              ansible_failed_result.msg
-              | default(ansible_failed_result.stderr | default(''))
-              | default(ansible_failed_result.stdout | default(''))
-              | default('Falla durante instalación NCPA (detalle no disponible)')
+              ruta_check.stdout
+              if (ruta_check is defined and (ruta_check.stdout | default('') | length > 0))
+              else
+              (
+                ansible_failed_result.stdout
+                | default(ansible_failed_result.stderr | default(''))
+                | default(ansible_failed_result.msg | default('Falla durante instalación NCPA'))
+              )
             )
+            | trim
           }}
 
     - name: "Windows | Construir resultado FAILED para el host (para reportes)"
