@@ -1,259 +1,233 @@
----
-# roles/software_installer/tasks/install_windows.yml
 
-- name: "Windows | Cargar configuracion de paquetes"
-  ansible.builtin.include_vars:
-    file: software_packages_windows.yml
-    name: win_config
+- name: "Windows | Instalacion NCPA (controlado)"
+  block:
 
-- name: "Windows | Inicializar lista de resultados para este host"
-  ansible.builtin.set_fact:
-    host_installation_results: []
+    # ============================================
+    # PASO 1: VERIFICAR RUTA DE ORIGEN (NFS)
+    # ============================================
+    - name: "Windows | Verificar que la ruta de origen existe"
+      ansible.windows.win_shell: |
+        $ruta = "{{ win_config.windows_software_source }}"
+        if (Test-Path $ruta) {
+            Write-Output "Ruta de origen accesible"
+            exit 0
+        } else {
+            Write-Output "Ruta de origen NO accesible: $ruta"
+            exit 1
+        }
+      register: ruta_check
+      failed_when: ruta_check.rc != 0
 
-# ============================================
-# PASO 1: VERIFICAR RUTA DE ORIGEN
-# ============================================
-- name: "Windows | Verificar que la ruta de origen existe"
-  ansible.windows.win_shell: |
-    $ruta = "{{ win_config.windows_software_source }}"
-    if (Test-Path $ruta) {
-        Write-Output "Ruta de origen accesible"
-        exit 0
-    } else {
-        Write-Output "Ruta de origen NO accesible: $ruta"
-        exit 1
-    }
-  register: ruta_check
-  failed_when: ruta_check.rc != 0
+    # ============================================
+    # PASO 2: CREAR DIRECTORIO DESTINO
+    # ============================================
+    - name: "Windows | Crear directorio de destino"
+      ansible.windows.win_file:
+        path: "{{ win_config.windows_dest_path }}"
+        state: directory
 
-# ============================================
-# PASO 2: CREAR DIRECTORIO DESTINO
-# ============================================
-- name: "Windows | Crear directorio de destino"
-  ansible.windows.win_file:
-    path: "{{ win_config.windows_dest_path }}"
-    state: directory
+    # ============================================
+    # PASO 3: COPIAR ARCHIVOS
+    # ============================================
+    - name: "Windows | Copiar archivos necesarios desde el NFS"
+      ansible.windows.win_copy:
+        src: "{{ win_config.windows_software_source }}\\{{ item }}"
+        dest: "{{ win_config.windows_dest_path }}"
+        remote_src: yes
+      loop: "{{ win_config.windows_files_to_copy }}"
+      register: copy_files_result
 
-# ============================================
-# PASO 3: COPIAR ARCHIVOS
-# ============================================
-- name: "Windows | Copiar archivos necesarios desde el NFS"
-  ansible.windows.win_copy:
-    src: "{{ win_config.windows_software_source }}\\{{ item }}"
-    dest: "{{ win_config.windows_dest_path }}"
-    remote_src: yes
-  loop: "{{ win_config.windows_files_to_copy }}"
-  register: copy_files_result
+    - name: "Windows | Verificar que los archivos se copiaron"
+      ansible.windows.win_stat:
+        path: "{{ win_config.windows_dest_path }}{{ item }}"
+      loop: "{{ win_config.windows_files_to_copy }}"
+      register: verify_copy
 
-- name: "Windows | Verificar que los archivos se copiaron"
-  ansible.windows.win_stat:
-    path: "{{ win_config.windows_dest_path }}{{ item }}"
-  loop: "{{ win_config.windows_files_to_copy }}"
-  register: verify_copy
+    # ============================================
+    # PASO 4: DETERMINAR SCRIPT SEGUN GRUPO
+    # ============================================
+    - name: "Windows | Determinar script a ejecutar segun el grupo"
+      ansible.builtin.set_fact:
+        script_a_ejecutar: >-
+          {% if 'PROD' in group_names %}
+          {{ win_config.windows_dest_path }}Instalar_Nagios_KIO.BAT
+          {% elif 'DRP' in group_names %}
+          {{ win_config.windows_dest_path }}Instalar_Nagios_TRIARA.BAT
+          {% else %}
+          ""
+          {% endif %}
+        ambiente_detectado: "{{ 'PROD' if 'PROD' in group_names else 'DRP' if 'DRP' in group_names else 'DESCONOCIDO' }}"
 
-# ============================================
-# PASO 4: DETERMINAR SCRIPT SEGUN GRUPO
-# ============================================
-- name: "Windows | Determinar script a ejecutar segun el grupo"
-  ansible.builtin.set_fact:
-    script_a_ejecutar: >-
-      {% if 'PROD' in group_names %}
-      {{ win_config.windows_dest_path }}Instalar_Nagios_KIO.BAT
-      {% elif 'DRP' in group_names %}
-      {{ win_config.windows_dest_path }}Instalar_Nagios_TRIARA.BAT
-      {% else %}
-      ""
-      {% endif %}
-    ambiente_detectado: "{{ 'PROD' if 'PROD' in group_names else 'DRP' if 'DRP' in group_names else 'DESCONOCIDO' }}"
+    # ============================================
+    # PASO 4.5: VERIFICAR SI NCPA YA ESTA INSTALADO
+    # ============================================
+    - name: "Windows | Verificar si NCPA ya esta instalado"
+      ansible.windows.win_stat:
+        path: "C:\\Program Files\\Nagios\\NCPA\\ncpa.exe"
+      register: ncpa_pre_check
 
-- name: "Windows | Mostrar informacion de ejecucion"
-  ansible.builtin.debug:
-    msg:
-      - "Ambiente detectado: {{ ambiente_detectado }}"
-      - "Script a ejecutar: {{ script_a_ejecutar }}"
-      - "Ruta de trabajo: {{ win_config.windows_dest_path }}"
+    - name: "Windows | Establecer flag de instalacion previa"
+      ansible.builtin.set_fact:
+        ya_instalado: "{{ ncpa_pre_check.stat.exists }}"
 
-# ============================================
-# PASO 4.5: VERIFICAR SI NCPA YA ESTA INSTALADO
-# ============================================
-- name: "Windows | Verificar si NCPA ya esta instalado"
-  ansible.windows.win_stat:
-    path: "C:\\Program Files\\Nagios\\NCPA\\ncpa.exe"
-  register: ncpa_pre_check
+    # ============================================
+    # PASO 4.6: EJECUTAR SCRIPT SOLO SI NO ESTA INSTALADO
+    # ============================================
+    - name: "Windows | Ejecutar script de instalacion (solo si no esta instalado)"
+      ansible.windows.win_command: "{{ script_a_ejecutar }}"
+      args:
+        chdir: "{{ win_config.windows_dest_path }}"
+      register: script_execution
+      failed_when: false
+      changed_when: script_execution.rc == 0
+      when:
+        - script_a_ejecutar != ""
+        - not ya_instalado
+      become: true
+      become_method: runas
+      become_user: SYSTEM
 
-- name: "Windows | Establecer flag de instalacion previa"
-  ansible.builtin.set_fact:
-    ya_instalado: "{{ ncpa_pre_check.stat.exists }}"
+    - name: "Windows | Registrar resultado para cuando ya estaba instalado"
+      ansible.builtin.set_fact:
+        script_execution:
+          rc: 0
+          stdout: "NCPA ya estaba instalado previamente - script no ejecutado"
+          stderr: ""
+      when: ya_instalado
 
-- name: "Windows | Mostrar estado de instalacion previa"
-  ansible.builtin.debug:
-    msg: "NCPA ya esta instalado previamente - se omitira la instalacion"
-  when: ya_instalado
+    # ============================================
+    # PASO 5: VERIFICAR INSTALACION Y SERVICIO
+    # ============================================
+    - name: "Windows | Verificar si NCPA esta instalado (post-instalacion)"
+      ansible.windows.win_stat:
+        path: "C:\\Program Files\\Nagios\\NCPA\\ncpa.exe"
+      register: ncpa_installed
 
-# ============================================
-# PASO 4.6: EJECUTAR SCRIPT SOLO SI NO ESTA INSTALADO
-# ============================================
-- name: "Windows | Ejecutar script de instalacion (solo si no esta instalado)"
-  ansible.windows.win_command: "{{ script_a_ejecutar }}"
-  args:
-    chdir: "{{ win_config.windows_dest_path }}"
-  register: script_execution
-  failed_when: false
-  changed_when: script_execution.rc == 0
-  when: 
-    - script_a_ejecutar != ""
-    - not ya_instalado
-  become: true
-  become_method: runas
-  become_user: SYSTEM
+    - name: "Windows | Obtener version de NCPA"
+      ansible.windows.win_shell: |
+        if (Test-Path "C:\Program Files\Nagios\NCPA\ncpa.exe") {
+            (Get-Item "C:\Program Files\Nagios\NCPA\ncpa.exe").VersionInfo.ProductVersion
+        } else {
+            Write-Output "No instalado"
+        }
+      register: ncpa_version
+      when: ncpa_installed.stat.exists
 
-- name: "Windows | Registrar resultado para cuando ya estaba instalado"
-  ansible.builtin.set_fact:
-    script_execution: 
-      rc: 0
-      stdout: "NCPA ya estaba instalado previamente - script no ejecutado"
-      stderr: ""
-  when: ya_instalado
+    - name: "Windows | Verificar estado del servicio NCPA"
+      ansible.windows.win_shell: |
+        $service = Get-Service -Name ncpasvc -ErrorAction SilentlyContinue
+        if ($service) {
+            $service.Status.ToString()
+        } else {
+            Write-Output "Servicio no encontrado"
+        }
+      register: service_status
 
-- name: "Windows | Mostrar resultado de la ejecucion"
-  ansible.builtin.debug:
-    msg:
-      - "Codigo de salida: {{ script_execution.rc }}"
-      - "Output: {{ script_execution.stdout }}"
-      - "Error: {{ script_execution.stderr }}"
-  when: script_execution is defined
+    - name: "Windows | Verificar puerto 5693"
+      ansible.windows.win_shell: |
+        $portTest = Test-NetConnection -ComputerName localhost -Port 5693 -WarningAction SilentlyContinue
+        if ($portTest.TcpTestSucceeded) {
+            Write-Output "Abierto"
+        } else {
+            Write-Output "Cerrado"
+        }
+      register: port_check
+      when: service_status.stdout == "Running"
 
-# ============================================
-# PASO 5: VERIFICAR INSTALACION Y SERVICIO
-# ============================================
-- name: "Windows | Verificar si NCPA esta instalado (post-instalacion)"
-  ansible.windows.win_stat:
-    path: "C:\\Program Files\\Nagios\\NCPA\\ncpa.exe"
-  register: ncpa_installed
+    # ============================================
+    # PASO 6: LIMPIEZA
+    # ============================================
+    - name: "Windows | Eliminar archivos copiados del directorio temporal"
+      ansible.windows.win_file:
+        path: "{{ win_config.windows_dest_path }}{{ item }}"
+        state: absent
+      loop: "{{ win_config.windows_files_to_copy }}"
+      register: cleanup_result
+      failed_when: false
 
-- name: "Windows | Obtener version de NCPA"
-  ansible.windows.win_shell: |
-    if (Test-Path "C:\Program Files\Nagios\NCPA\ncpa.exe") {
-        (Get-Item "C:\Program Files\Nagios\NCPA\ncpa.exe").VersionInfo.ProductVersion
-    } else {
-        Write-Output "No instalado"
-    }
-  register: ncpa_version
-  when: ncpa_installed.stat.exists
+    # ============================================
+    # PASO 7: CONSOLIDAR RESULTADOS (SUCCESS O FAILED)
+    # ============================================
+    - name: "Windows | Determinar mensaje para el reporte"
+      ansible.builtin.set_fact:
+        mensaje_base: >-
+          {% if ya_instalado %}
+          Paquete instalado previamente
+          {% else %}
+          Paquete instalado correctamente
+          {% endif %}
 
-- name: "Windows | Verificar estado del servicio NCPA"
-  ansible.windows.win_shell: |
-    $service = Get-Service -Name ncpasvc -ErrorAction SilentlyContinue
-    if ($service) {
-        $service.Status.ToString()
-    } else {
-        Write-Output "Servicio no encontrado"
-    }
-  register: service_status
+    - name: "Windows | Construir resultado de instalacion"
+      ansible.builtin.set_fact:
+        host_installation_results: "{{ host_installation_results + [ pkg_result ] }}"
+      vars:
+        pkg_result:
+          package_name: "NCPA Agent"
+          ambiente: "{{ ambiente_detectado }}"
+          script_ejecutado: "{{ script_a_ejecutar | basename if not ya_instalado else 'N/A' }}"
+          status: "{{ 'success' if (script_execution.rc == 0 or ya_instalado) and ncpa_installed.stat.exists else 'failed' }}"
+          install_date: "{{ ansible_date_time.iso8601 }}"
+          ya_instalado: "{{ ya_instalado | default(false) }}"
+          version_installed: "{{ ncpa_version.stdout | default('N/A') | trim }}"
+          service_status: "{{ service_status.stdout | default('No instalado') | trim }}"
+          port_status: "{{ port_check.stdout | default('N/A') }}"
+          instalado: "{{ 'Si' if ncpa_installed.stat.exists else 'No' }}"
+          install_path: "C:\\Program Files\\Nagios\\NCPA"
+          cleanup_performed: "{{ 'Si' if cleanup_result is defined else 'No' }}"
+          files_cleaned: "{{ win_config.windows_files_to_copy | join(', ') }}"
+          rc: "{{ script_execution.rc | default('') }}"
+          script_output: "{{ script_execution.stdout | default('') }}"
+          script_error: "{{ script_execution.stderr | default('') }}"
+          files_copied: "{{ win_config.windows_files_to_copy | join(', ') }}"
+          message: "{{ mensaje_base }} | Archivos temporales eliminados."
 
-- name: "Windows | Verificar puerto 5693"
-  ansible.windows.win_shell: |
-    $portTest = Test-NetConnection -ComputerName localhost -Port 5693 -WarningAction SilentlyContinue
-    if ($portTest.TcpTestSucceeded) {
-        Write-Output "Abierto"
-    } else {
-        Write-Output "Cerrado"
-    }
-  register: port_check
-  when: service_status.stdout == "Running"
+    - name: "Windows | Determinar estado general del host"
+      ansible.builtin.set_fact:
+        overall_host_status: >-
+          {% set failed_states = host_installation_results | selectattr('status', 'equalto', 'failed') | list %}
+          {% if failed_states | length > 0 %}failed
+          {% else %}success
+          {% endif %}
 
-- name: "Windows | Mostrar diagnostico de instalacion"
-  ansible.builtin.debug:
-    msg:
-      - "DIAGNOSTICO DE INSTALACION:"
-      - "NCPA instalado: {{ 'Si' if ncpa_installed.stat.exists else 'No' }}"
-      - "Version: {{ ncpa_version.stdout | default('N/A') }}"
-      - "Estado servicio: {{ service_status.stdout | default('N/A') }}"
+    - name: "Windows | Construir resultado final para el host"
+      ansible.builtin.set_fact:
+        software_installation_result:
+          host: "{{ inventory_hostname }}"
+          os_family: "Windows"
+          overall_status: "{{ overall_host_status }}"
+          ambiente: "{{ ambiente_detectado }}"
+          packages: "{{ host_installation_results }}"
+          message: "{{ mensaje_base }} | Archivos temporales eliminados."
 
-# ============================================
-# PASO 6: LIMPIAR ARCHIVOS TEMPORALES
-# ============================================
-- name: "Windows | Listar archivos en C:\ sys\ antes de limpiar"
-  ansible.windows.win_shell: |
-    Write-Output "Archivos en {{ win_config.windows_dest_path }}:"
-    Get-ChildItem "{{ win_config.windows_dest_path }}" | Select-Object Name, Length | Format-Table -AutoSize
-  register: files_before_cleanup
+  rescue:
+    # Si falla NFS / copy / lo que sea, dejamos el host como FAILED con error real
+    - name: "Windows | Capturar error para reporte"
+      ansible.builtin.set_fact:
+        _win_error_msg: >-
+          {{
+            (
+              ansible_failed_result.msg
+              | default(ansible_failed_result.stderr | default(''))
+              | default(ansible_failed_result.stdout | default(''))
+              | default('Falla durante instalacion NCPA (detalle no disponible)')
+            )
+          }}
 
-- name: "Windows | Mostrar archivos a eliminar"
-  ansible.builtin.debug:
-    msg: "{{ files_before_cleanup.stdout_lines }}"
-
-- name: "Windows | Eliminar archivos copiados del directorio temporal"
-  ansible.windows.win_file:
-    path: "{{ win_config.windows_dest_path }}{{ item }}"
-    state: absent
-  loop: "{{ win_config.windows_files_to_copy }}"
-  register: cleanup_result
-
-- name: "Windows | Verificar que los archivos fueron eliminados"
-  ansible.windows.win_stat:
-    path: "{{ win_config.windows_dest_path }}{{ item }}"
-  loop: "{{ win_config.windows_files_to_copy }}"
-  register: verify_cleanup
-
-- name: "Windows | Mostrar resultado de la limpieza"
-  ansible.builtin.debug:
-    msg: "Archivo {{ item.item }} - {{ 'Eliminado' if not item.stat.exists else 'Aun existe' }}"
-  loop: "{{ verify_cleanup.results }}"
-
-# ============================================
-# PASO 7: CONSOLIDAR RESULTADOS
-# ============================================
-- name: "Windows | Determinar mensaje para el reporte"
-  ansible.builtin.set_fact:
-    mensaje_base: >-
-      {% if ya_instalado %}
-      Paquete instalado previamente
-      {% else %}
-      Paquete instalado correctamente
-      {% endif %}
-
-- name: "Windows | Construir resultado de instalacion"
-  ansible.builtin.set_fact:
-    host_installation_results: "{{ host_installation_results + [ pkg_result ] }}"
-  vars:
-    pkg_result:
-      package_name: "NCPA Agent"
-      ambiente: "{{ ambiente_detectado }}"
-      script_ejecutado: "{{ script_a_ejecutar | basename if not ya_instalado else 'N/A' }}"
-      status: "{{ 'success' if (script_execution.rc == 0 or ya_instalado) and ncpa_installed.stat.exists else 'failed' }}"
-      install_date: "{{ ansible_date_time.iso8601 }}"
-      ya_instalado: "{{ ya_instalado | default(false) }}"
-      # CAMPOS DE VERIFICACION
-      version_installed: "{{ ncpa_version.stdout | default('N/A') | trim }}"
-      service_status: "{{ service_status.stdout | default('No instalado') | trim }}"
-      port_status: "{{ port_check.stdout | default('N/A') }}"
-      instalado: "{{ 'Si' if ncpa_installed.stat.exists else 'No' }}"
-      install_path: "C:\\Program Files\\Nagios\\NCPA"
-      # CAMPOS DE LIMPIEZA
-      cleanup_performed: "{{ 'Si' if cleanup_result is defined else 'No' }}"
-      files_cleaned: "{{ win_config.windows_files_to_copy | join(', ') }}"
-      # Informacion de ejecucion
-      rc: "{{ script_execution.rc | default('') }}"
-      script_output: "{{ script_execution.stdout | default('') }}"
-      script_error: "{{ script_execution.stderr | default('') }}"
-      files_copied: "{{ win_config.windows_files_to_copy | join(', ') }}"
-      message: "{{ mensaje_base }} | Limpieza completada."
-
-- name: "Windows | Determinar estado general del host"
-  ansible.builtin.set_fact:
-    overall_host_status: >-
-      {% set failed_states = host_installation_results | selectattr('status', 'equalto', 'failed') | list %}
-      {% if failed_states | length > 0 %}failed
-      {% else %}success
-      {% endif %}
-
-- name: "Windows | Construir resultado final para el host"
-  ansible.builtin.set_fact:
-    software_installation_result:
-      host: "{{ inventory_hostname }}"
-      os_family: "Windows"
-      overall_status: "{{ overall_host_status }}"
-      ambiente: "{{ ambiente_detectado }}"
-      packages: "{{ host_installation_results }}"
-      message: "{{ mensaje_base }} | Archivos temporales eliminados."
+    - name: "Windows | Construir resultado FAILED para el host (para reportes)"
+      ansible.builtin.set_fact:
+        software_installation_result:
+          host: "{{ inventory_hostname }}"
+          os_family: "Windows"
+          overall_status: "failed"
+          ambiente: "{{ ambiente_detectado | default('DESCONOCIDO') }}"
+          packages:
+            - package_name: "NCPA Agent"
+              ambiente: "{{ ambiente_detectado | default('DESCONOCIDO') }}"
+              script_ejecutado: "N/A"
+              status: "failed"
+              install_date: "{{ ansible_date_time.iso8601 }}"
+              ya_instalado: "{{ ya_instalado | default(false) }}"
+              version_installed: "N/A"
+              install_path: "N/A"
+              message: "Falla durante instalacion: {{ _win_error_msg }}"
+          message: "Falla durante instalacion: {{ _win_error_msg }}"

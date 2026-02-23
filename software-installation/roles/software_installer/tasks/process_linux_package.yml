@@ -43,7 +43,7 @@
           - _pkg_file | length > 0
           - _cmd_post_validate | length > 0
         fail_msg: >-
-          Definición incompleta del paquete. Se requiere: name, src_file,
+          Definicion incompleta del paquete. Se requiere: name, src_file,
           y commands.post_install_validation. Paquete recibido: {{ pkg | to_nice_json }}
 
     # ===========================
@@ -80,7 +80,7 @@
       register: fetch_check
       run_once: true
 
-    - name: "Linux | Detener si el archivo no se copió al controlador"
+    - name: "Linux | Detener si el archivo no se copio al controlador"
       ansible.builtin.fail:
         msg: "El archivo {{ controller_temp_path }} no existe en el nodo controlador"
       when: not fetch_check.stat.exists
@@ -95,20 +95,20 @@
         mode: "0644"
       register: copy_result
 
-    - name: "Linux | Verificar que el archivo se copió al destino"
+    - name: "Linux | Verificar que el archivo se copio al destino"
       ansible.builtin.stat:
         path: "{{ dest_full_path }}"
       register: copy_check
 
-    - name: "Linux | Detener si el archivo no se copió al destino"
+    - name: "Linux | Detener si el archivo no se copio al destino"
       ansible.builtin.fail:
         msg: "El archivo {{ dest_full_path }} no existe en el host destino"
       when: not copy_check.stat.exists
 
     # ===========================
-    # 4) Pre-validación: ¿ya está instalado?
+    # 4) Pre-validacion: ¿ya esta instalado?
     # ===========================
-    - name: "Linux | Pre-validación usando post_install_validation"
+    - name: "Linux | Pre-validacion usando post_install_validation"
       ansible.builtin.shell: |
         set -o pipefail
         {{ _cmd_post_validate }}
@@ -118,14 +118,14 @@
       changed_when: false
       failed_when: false
 
-    - name: "Linux | Determinar si el paquete ya está instalado"
+    - name: "Linux | Determinar si el paquete ya esta instalado"
       ansible.builtin.set_fact:
         package_installed: "{{ (pre_validation.rc | default(1)) == 0 }}"
 
     # ===========================
-    # 5) Instalación (solo si NO está instalado)
+    # 5) Instalacion
     # ===========================
-    - name: "Linux | Instalar paquete (si no está instalado)"
+    - name: "Linux | Instalar paquete"
       ansible.builtin.shell: |
         set -o pipefail
         {{ _cmd_install_base }} "{{ dest_full_path }}"
@@ -136,9 +136,9 @@
       failed_when: false
 
     # ===========================
-    # 6) Post-validación
+    # 6) Post-validacion
     # ===========================
-    - name: "Linux | Post-validación usando post_install_validation"
+    - name: "Linux | Post-validacion usando post_install_validation"
       ansible.builtin.shell: |
         set -o pipefail
         {{ _cmd_post_validate }}
@@ -155,14 +155,14 @@
           stdout: "{{ post_validation.stdout | default('') }}"
           stderr: "{{ post_validation.stderr | default('') }}"
 
-    - name: "Linux | Determinar si el paquete quedó instalado después"
+    - name: "Linux | Determinar si el paquete quedo instalado despues"
       ansible.builtin.set_fact:
         package_installed_after: "{{ (post_validation.rc | default(1)) == 0 }}"
 
     # ===========================
-    # 6.1) Obtener versión (robusto, no falla si no hay match)
+    # 6.1) Obtener version
     # ===========================
-    - name: "Linux | Calcular versión instalada (robusto con regex_findall)"
+    - name: "Linux | Calcular version instalada"
       ansible.builtin.set_fact:
         _version_matches: >-
           {{
@@ -170,14 +170,14 @@
             if (_version_regex | default('') | length > 0) else []
           }}
 
-    - name: "Linux | Set version_installed (primer match o vacío)"
+    - name: "Linux | Set version_installed"
       ansible.builtin.set_fact:
         version_installed: "{{ (_version_matches | first) | default('') }}"
 
     # ===========================
-    # 6.2) Obtener fecha de instalación (best-effort)
+    # 6.2) Obtener fecha de instalacion (best-effort)
     # ===========================
-    - name: "Linux | Obtener fecha de instalación (rpm -qi) (best-effort)"
+    - name: "Linux | Obtener fecha de instalacion"
       ansible.builtin.shell: |
         set -o pipefail
         rpm -qi "{{ _pkg_name }}" | awk -F': ' '/Install Date/ {print $2; exit 0}'
@@ -200,9 +200,6 @@
 
     # ===========================
     # 7) Activation / Start / Status
-    #    - Con timeouts para evitar cuelgues
-    #    - Para SentinelAgent: start → check → activate-if-needed → status
-    #    - Activación SOLO cuando se instala por primera vez (a menos que force_activation=true)
     # ===========================
 
     - name: "Linux | Iniciar servicio/agente (con timeout)"
@@ -219,8 +216,8 @@
       changed_when: false
       failed_when: false
 
-    # --- SentinelAgent: validar si ya está activado (best-effort)
-    - name: "Linux | SentinelAgent | Check activación (best-effort, con timeout)"
+    # --- SentinelAgent: validar si ya esta activado
+    - name: "Linux | SentinelAgent | Check activacion"
       ansible.builtin.shell: |
         set -o pipefail
         {{ (pkg.activation_check.cmd | default(_cmd_status)) }} < /dev/null
@@ -235,7 +232,7 @@
         - package_installed_after | bool
         - ((pkg.activation_check is defined) or (_cmd_status | length > 0))
 
-    - name: "Linux | SentinelAgent | Determinar si ya está activado"
+    - name: "Linux | SentinelAgent | Determinar si ya esta activado"
       ansible.builtin.set_fact:
         sentinel_is_activated: >-
           {{
@@ -246,12 +243,12 @@
         - pkg.name | default('') == 'SentinelAgent'
         - package_installed_after | bool
 
-    - name: "Linux | SentinelAgent | Validar token si se requiere activación"
+    - name: "Linux | SentinelAgent | Validar token si se requiere activacion"
       ansible.builtin.assert:
         that:
           - sentinelone_token is defined
           - (sentinelone_token | string | length) > 20
-        fail_msg: "sentinelone_token no está definido o es inválido. Se omite activación."
+        fail_msg: "sentinelone_token no esta definido o es invalido. Se omite activacion."
       when:
         - pkg.name | default('') == 'SentinelAgent'
         - package_installed_after | bool
@@ -260,7 +257,7 @@
         - ((not package_installed) | bool) or (pkg.force_activation | default(false) | bool)
       failed_when: false
 
-    - name: "Linux | SentinelAgent | Ejecutar activación (si hace falta, con timeout)"
+    - name: "Linux | SentinelAgent | Ejecutar activacion"
       ansible.builtin.shell: |
         set -o pipefail
         {{ _cmd_activation }} < /dev/null
@@ -277,7 +274,7 @@
       changed_when: false
       failed_when: false
 
-    - name: "Linux | SentinelAgent | Verificar status final (con timeout)"
+    - name: "Linux | SentinelAgent | Verificar status final"
       ansible.builtin.shell: |
         set -o pipefail
         {{ _cmd_status }} < /dev/null
@@ -293,7 +290,7 @@
       failed_when: false
 
     # --- Otros paquetes: activation/status opcional (con timeout)
-    - name: "Linux | Ejecutar activación (otros paquetes, con timeout)"
+    - name: "Linux | Ejecutar activacion"
       ansible.builtin.shell: |
         set -o pipefail
         {{ _cmd_activation }} < /dev/null
@@ -309,7 +306,7 @@
       changed_when: false
       failed_when: false
 
-    - name: "Linux | Verificar status (otros paquetes, con timeout)"
+    - name: "Linux | Verificar status"
       ansible.builtin.shell: |
         set -o pipefail
         {{ _cmd_status }} < /dev/null
@@ -339,7 +336,7 @@
           {% elif package_installed_after | bool %}
           Paquete instalado correctamente
           {% else %}
-          Falló instalación/validación
+          Fallo instalacion/validacion
           {% endif %}
 
     - name: "Linux | Agregar resultado del paquete a host_installation_results"
@@ -361,9 +358,9 @@
           }}
 
     # ===========================
-    # 9) Limpieza (opcional)
+    # 9) Limpieza
     # ===========================
-    - name: "Linux | Eliminar archivo copiado en destino (opcional)"
+    - name: "Linux | Eliminar archivo copiado en destino"
       ansible.builtin.file:
         path: "{{ dest_full_path }}"
         state: absent
@@ -379,7 +376,7 @@
     # ===========================
     # 10) Log por host
     # ===========================
-    - name: "Linux | Guardar verificación en archivo de log"
+    - name: "Linux | Guardar verificacion en archivo de log"
       ansible.builtin.copy:
         dest: "{{ _report_dir_effective }}/linux_software_install_{{ inventory_hostname }}.log"
         content: |
@@ -391,29 +388,29 @@
           --------------------------------------------
           post_install_validation: {{ _cmd_post_validate }}
           Instalado (antes): {{ package_installed | default('N/A') }}
-          RC pre-validación: {{ pre_validation.rc | default('N/A') }}
-          OUT pre-validación: {{ pre_validation.stdout | default('') }}
-          ERR pre-validación: {{ pre_validation.stderr | default('') }}
+          RC pre-validacion: {{ pre_validation.rc | default('N/A') }}
+          OUT pre-validacion: {{ pre_validation.stdout | default('') }}
+          ERR pre-validacion: {{ pre_validation.stderr | default('') }}
           --------------------------------------------
-          Instalación ejecutada: {{ (not package_installed) | default(false) }}
-          Código instalación: {{ install_result.rc | default('N/A') }}
-          OUT instalación: {{ install_result.stdout | default('') }}
-          ERR instalación: {{ install_result.stderr | default('') }}
+          Instalacion ejecutada: {{ (not package_installed) | default(false) }}
+          Codigo instalacion: {{ install_result.rc | default('N/A') }}
+          OUT instalacion: {{ install_result.stdout | default('') }}
+          ERR instalacion: {{ install_result.stderr | default('') }}
           --------------------------------------------
-          Instalado (después): {{ package_installed_after | default('N/A') }}
-          RC post-validación: {{ validation_result.rc | default('N/A') }}
-          OUT post-validación: {{ validation_result.stdout | default('') }}
-          ERR post-validación: {{ validation_result.stderr | default('') }}
+          Instalado (despues): {{ package_installed_after | default('N/A') }}
+          RC post-validacion: {{ validation_result.rc | default('N/A') }}
+          OUT post-validacion: {{ validation_result.stdout | default('') }}
+          ERR post-validacion: {{ validation_result.stderr | default('') }}
           --------------------------------------------
-          Versión instalada: {{ version_installed | default('') }}
-          Fecha instalación: {{ install_date | default('') }}
+          Version instalada: {{ version_installed | default('') }}
+          Fecha instalacion: {{ install_date | default('') }}
           ============================================
 
   rescue:
     - name: "Linux | Error al procesar {{ pkg.name | default('paquete_sin_nombre') }}"
       ansible.builtin.debug:
         msg:
-          - "Ocurrió un error al procesar el paquete {{ pkg.name | default('N/A') }}"
+          - "Ocurrio un error al procesar el paquete {{ pkg.name | default('N/A') }}"
           - "Error: {{ ansible_failed_result | default({}) }}"
 
     - name: "Linux | Agregar resultado fallido del paquete a host_installation_results (para reporte)"
@@ -429,12 +426,12 @@
                 'ya_instalado': false,
                 'install_date': '',
                 'version_installed': '',
-                'message': 'Falló instalación/validación'
+                'message': 'Fallo instalacion/validacion'
               }
             ]
           }}
 
-    - name: "Linux | Guardar error en log (fallback seguro)"
+    - name: "Linux | Guardar error en log"
       ansible.builtin.copy:
         dest: "{{ _report_dir_effective }}/linux_software_install_{{ inventory_hostname }}.log"
         content: |
@@ -452,4 +449,4 @@
   always:
     - name: "Linux | Fin del procesamiento de {{ pkg.name | default('paquete_sin_nombre') }}"
       ansible.builtin.debug:
-        msg: "Finalizó procesamiento de {{ pkg.name | default('N/A') }} en {{ inventory_hostname }}"
+        msg: "Finalizo procesamiento de {{ pkg.name | default('N/A') }} en {{ inventory_hostname }}"

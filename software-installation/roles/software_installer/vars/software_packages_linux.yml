@@ -42,7 +42,7 @@ linux_packages:
     
   # Paquete: SentinelAgent (ejemplo para futuro)
   # - name: "SentinelAgent"
-  #   src_file: "SentinelAgent_linux_x86_64.rpm"
+  #   src_file: "SentinelAgent_Linux_x86_64_v25_1_3_6.rpm"
   #   description: "SentinelOne Endpoint Protection Agent"
   #   vendor: "SentinelOne"
   #   dest_path: "/tmp/"
