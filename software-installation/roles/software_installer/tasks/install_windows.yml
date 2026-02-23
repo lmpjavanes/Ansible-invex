@@ -1,5 +1,34 @@
+---
+# roles/software_installer/tasks/install_windows.yml
 
-- name: "Windows | Instalacion NCPA (controlado)"
+- name: "Windows | Cargar configuracion de paquetes"
+  ansible.builtin.include_vars:
+    file: software_packages_windows.yml
+    name: win_config
+
+- name: "Windows | Validar win_config cargado"
+  ansible.builtin.assert:
+    that:
+      - win_config is defined
+      - win_config.windows_software_source is defined
+      - win_config.windows_dest_path is defined
+      - win_config.windows_files_to_copy is defined
+    fail_msg: "No se cargó correctamente software_packages_windows.yml o faltan llaves requeridas."
+
+- name: "Windows | Inicializar lista de resultados para este host"
+  ansible.builtin.set_fact:
+    host_installation_results: []
+
+# Dejar definido desde el inicio para que rescue no truene
+- name: "Windows | Determinar ambiente (pre)"
+  ansible.builtin.set_fact:
+    ambiente_detectado: "{{ 'PROD' if 'PROD' in group_names else 'DRP' if 'DRP' in group_names else 'DESCONOCIDO' }}"
+    ya_instalado: false
+
+# ============================================
+# EJECUCIÓN CONTROLADA + RESCUE PARA REPORTES
+# ============================================
+- name: "Windows | Instalación NCPA (controlado)"
   block:
 
     # ============================================
@@ -43,6 +72,12 @@
       loop: "{{ win_config.windows_files_to_copy }}"
       register: verify_copy
 
+    - name: "Windows | Validar que todos los archivos fueron copiados"
+      ansible.builtin.assert:
+        that:
+          - (verify_copy.results | selectattr('stat.exists', 'equalto', true) | list | length) == (win_config.windows_files_to_copy | length)
+        fail_msg: "No se copiaron todos los archivos requeridos al destino."
+
     # ============================================
     # PASO 4: DETERMINAR SCRIPT SEGUN GRUPO
     # ============================================
@@ -56,7 +91,13 @@
           {% else %}
           ""
           {% endif %}
-        ambiente_detectado: "{{ 'PROD' if 'PROD' in group_names else 'DRP' if 'DRP' in group_names else 'DESCONOCIDO' }}"
+
+    - name: "Windows | Mostrar informacion de ejecucion"
+      ansible.builtin.debug:
+        msg:
+          - "Ambiente detectado: {{ ambiente_detectado }}"
+          - "Script a ejecutar: {{ script_a_ejecutar }}"
+          - "Ruta de trabajo: {{ win_config.windows_dest_path }}"
 
     # ============================================
     # PASO 4.5: VERIFICAR SI NCPA YA ESTA INSTALADO
@@ -68,7 +109,12 @@
 
     - name: "Windows | Establecer flag de instalacion previa"
       ansible.builtin.set_fact:
-        ya_instalado: "{{ ncpa_pre_check.stat.exists }}"
+        ya_instalado: "{{ ncpa_pre_check.stat.exists | default(false) }}"
+
+    - name: "Windows | Mostrar estado de instalacion previa"
+      ansible.builtin.debug:
+        msg: "NCPA ya esta instalado previamente - se omitira la instalacion"
+      when: ya_instalado
 
     # ============================================
     # PASO 4.6: EJECUTAR SCRIPT SOLO SI NO ESTA INSTALADO
@@ -94,6 +140,14 @@
           stdout: "NCPA ya estaba instalado previamente - script no ejecutado"
           stderr: ""
       when: ya_instalado
+
+    - name: "Windows | Mostrar resultado de la ejecucion"
+      ansible.builtin.debug:
+        msg:
+          - "Codigo de salida: {{ script_execution.rc | default('N/A') }}"
+          - "Output: {{ script_execution.stdout | default('') }}"
+          - "Error: {{ script_execution.stderr | default('') }}"
+      when: script_execution is defined
 
     # ============================================
     # PASO 5: VERIFICAR INSTALACION Y SERVICIO
@@ -132,7 +186,15 @@
             Write-Output "Cerrado"
         }
       register: port_check
-      when: service_status.stdout == "Running"
+      when: (service_status.stdout | default('')) == "Running"
+
+    - name: "Windows | Mostrar diagnostico de instalacion"
+      ansible.builtin.debug:
+        msg:
+          - "DIAGNOSTICO DE INSTALACION:"
+          - "NCPA instalado: {{ 'Si' if (ncpa_installed.stat.exists | default(false)) else 'No' }}"
+          - "Version: {{ ncpa_version.stdout | default('N/A') }}"
+          - "Estado servicio: {{ service_status.stdout | default('N/A') }}"
 
     # ============================================
     # PASO 6: LIMPIEZA
@@ -165,13 +227,13 @@
           package_name: "NCPA Agent"
           ambiente: "{{ ambiente_detectado }}"
           script_ejecutado: "{{ script_a_ejecutar | basename if not ya_instalado else 'N/A' }}"
-          status: "{{ 'success' if (script_execution.rc == 0 or ya_instalado) and ncpa_installed.stat.exists else 'failed' }}"
+          status: "{{ 'success' if ((script_execution.rc | default(1)) == 0 or ya_instalado) and (ncpa_installed.stat.exists | default(false)) else 'failed' }}"
           install_date: "{{ ansible_date_time.iso8601 }}"
           ya_instalado: "{{ ya_instalado | default(false) }}"
           version_installed: "{{ ncpa_version.stdout | default('N/A') | trim }}"
           service_status: "{{ service_status.stdout | default('No instalado') | trim }}"
           port_status: "{{ port_check.stdout | default('N/A') }}"
-          instalado: "{{ 'Si' if ncpa_installed.stat.exists else 'No' }}"
+          instalado: "{{ 'Si' if (ncpa_installed.stat.exists | default(false)) else 'No' }}"
           install_path: "C:\\Program Files\\Nagios\\NCPA"
           cleanup_performed: "{{ 'Si' if cleanup_result is defined else 'No' }}"
           files_cleaned: "{{ win_config.windows_files_to_copy | join(', ') }}"
@@ -209,7 +271,7 @@
               ansible_failed_result.msg
               | default(ansible_failed_result.stderr | default(''))
               | default(ansible_failed_result.stdout | default(''))
-              | default('Falla durante instalacion NCPA (detalle no disponible)')
+              | default('Falla durante instalación NCPA (detalle no disponible)')
             )
           }}
 
@@ -229,5 +291,5 @@
               ya_instalado: "{{ ya_instalado | default(false) }}"
               version_installed: "N/A"
               install_path: "N/A"
-              message: "Falla durante instalacion: {{ _win_error_msg }}"
-          message: "Falla durante instalacion: {{ _win_error_msg }}"
+              message: "Falla durante instalación: {{ _win_error_msg }}"
+          message: "Falla durante instalación: {{ _win_error_msg }}"
