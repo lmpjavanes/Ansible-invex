@@ -55,10 +55,10 @@ linux_packages:
   #     start: "/opt/sentinelone/bin/sentinelctl control start"
   #     status: "/opt/sentinelone/bin/sentinelctl control status"
 
-  #   # Para extraer versión desde: SentinelAgent-23.2.1.12345.x86_64
+  #   # Para extraer version desde: SentinelAgent-23.2.1.12345.x86_64
   #   version_regex: "^SentinelAgent-([0-9]+\\.[0-9]+\\.[0-9]+)"
 
-  #   # -------- Lógica especial para activación ----------
+  #   # -------- Logica especial para activacion ----------
   #   activation_check:
   #     cmd: "/opt/sentinelone/bin/sentinelctl control status"
   #     success_regex: "Agent state\\s+Enabled"

@@ -13,7 +13,7 @@
       - win_config.windows_software_source is defined
       - win_config.windows_dest_path is defined
       - win_config.windows_files_to_copy is defined
-    fail_msg: "No se cargó correctamente software_packages_windows.yml o faltan llaves requeridas."
+    fail_msg: "No se cargo correctamente software_packages_windows.yml o faltan llaves requeridas."
 
 - name: "Windows | Inicializar lista de resultados para este host"
   ansible.builtin.set_fact:
@@ -26,9 +26,9 @@
     ya_instalado: false
 
 # ============================================
-# EJECUCIÓN CONTROLADA + RESCUE PARA REPORTES
+# EJECUCIoN CONTROLADA + RESCUE PARA REPORTES
 # ============================================
-- name: "Windows | Instalación NCPA (controlado)"
+- name: "Windows | Instalacion NCPA (controlado)"
   block:
 
     # ============================================
@@ -274,7 +274,7 @@
               (
                 ansible_failed_result.stdout
                 | default(ansible_failed_result.stderr | default(''))
-                | default(ansible_failed_result.msg | default('Falla durante instalación NCPA'))
+                | default(ansible_failed_result.msg | default('Falla durante instalacion NCPA'))
               )
             )
             | trim
@@ -296,5 +296,5 @@
               ya_instalado: "{{ ya_instalado | default(false) }}"
               version_installed: "N/A"
               install_path: "N/A"
-              message: "Falla durante instalación: {{ _win_error_msg }}"
-          message: "Falla durante instalación: {{ _win_error_msg }}"
+              message: "Falla durante instalacion: {{ _win_error_msg }}"
+          message: "Falla durante instalacion: {{ _win_error_msg }}"
