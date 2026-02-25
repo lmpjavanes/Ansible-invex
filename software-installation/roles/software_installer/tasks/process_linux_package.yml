@@ -47,66 +47,7 @@
           y commands.post_install_validation. Paquete recibido: {{ pkg | to_nice_json }}
 
     # ===========================
-    # 1) Verificar en origen (invd-ts-ansible)
-    # ===========================
-    - name: "Linux | Verificar que el archivo existe en invd-ts-ansible"
-      ansible.builtin.stat:
-        path: "{{ source_full_path }}"
-      delegate_to: invd-ts-ansible
-      register: file_check
-      run_once: true
-
-    - name: "Linux | Detener si el archivo no existe"
-      ansible.builtin.fail:
-        msg: "El archivo {{ source_full_path }} no existe en invd-ts-ansible"
-      when: not file_check.stat.exists
-
-    # ===========================
-    # 2) Fetch al controller
-    # ===========================
-    - name: "Linux | FETCH - Traer archivo desde invd-ts-ansible al nodo controlador"
-      ansible.builtin.fetch:
-        src: "{{ source_full_path }}"
-        dest: "{{ controller_temp_path }}"
-        flat: true
-      delegate_to: invd-ts-ansible
-      register: fetch_result
-      run_once: true
-
-    - name: "Linux | Verificar que el fetch fue exitoso (controller)"
-      ansible.builtin.stat:
-        path: "{{ controller_temp_path }}"
-      delegate_to: localhost
-      register: fetch_check
-      run_once: true
-
-    - name: "Linux | Detener si el archivo no se copio al controlador"
-      ansible.builtin.fail:
-        msg: "El archivo {{ controller_temp_path }} no existe en el nodo controlador"
-      when: not fetch_check.stat.exists
-
-    # ===========================
-    # 3) Copiar al host destino
-    # ===========================
-    - name: "Linux | Copiar archivo desde nodo controlador al servidor destino"
-      ansible.builtin.copy:
-        src: "{{ controller_temp_path }}"
-        dest: "{{ dest_full_path }}"
-        mode: "0644"
-      register: copy_result
-
-    - name: "Linux | Verificar que el archivo se copio al destino"
-      ansible.builtin.stat:
-        path: "{{ dest_full_path }}"
-      register: copy_check
-
-    - name: "Linux | Detener si el archivo no se copio al destino"
-      ansible.builtin.fail:
-        msg: "El archivo {{ dest_full_path }} no existe en el host destino"
-      when: not copy_check.stat.exists
-
-    # ===========================
-    # 4) Pre-validacion: ¿ya esta instalado?
+    # 1) Pre-validación: ¿ya esta instalado? (ANTES de copiar RPM)
     # ===========================
     - name: "Linux | Pre-validacion usando post_install_validation"
       ansible.builtin.shell: |
@@ -123,17 +64,75 @@
         package_installed: "{{ (pre_validation.rc | default(1)) == 0 }}"
 
     # ===========================
-    # 5) Instalacion
+    # 2) Repo/FETCH/COPY/INSTALL (solo si NO esta instalado)
     # ===========================
-    - name: "Linux | Instalar paquete"
-      ansible.builtin.shell: |
-        set -o pipefail
-        {{ _cmd_install_base }} "{{ dest_full_path }}"
-      args:
-        executable: /bin/bash
-      register: install_result
+    - name: "Linux | Repo/FETCH/COPY/INSTALL (solo si no esta instalado)"
+      block:
+
+        # 2.1) Verificar en origen (invd-ts-ansible)
+        - name: "Linux | Verificar que el archivo existe en invd-ts-ansible"
+          ansible.builtin.stat:
+            path: "{{ source_full_path }}"
+          delegate_to: invd-ts-ansible
+          register: file_check
+          run_once: true
+
+        - name: "Linux | Detener si el archivo no existe"
+          ansible.builtin.fail:
+            msg: "El archivo {{ source_full_path }} no existe en invd-ts-ansible"
+          when: not file_check.stat.exists
+
+        # 2.2) Fetch al controller
+        - name: "Linux | FETCH - Traer archivo desde invd-ts-ansible al nodo controlador"
+          ansible.builtin.fetch:
+            src: "{{ source_full_path }}"
+            dest: "{{ controller_temp_path }}"
+            flat: true
+          delegate_to: invd-ts-ansible
+          register: fetch_result
+          run_once: true
+
+        - name: "Linux | Verificar que el fetch fue exitoso (controller)"
+          ansible.builtin.stat:
+            path: "{{ controller_temp_path }}"
+          delegate_to: localhost
+          register: fetch_check
+          run_once: true
+
+        - name: "Linux | Detener si el archivo no se copio al controlador"
+          ansible.builtin.fail:
+            msg: "El archivo {{ controller_temp_path }} no existe en el nodo controlador"
+          when: not fetch_check.stat.exists
+
+        # 2.3) Copiar al host destino
+        - name: "Linux | Copiar archivo desde nodo controlador al servidor destino"
+          ansible.builtin.copy:
+            src: "{{ controller_temp_path }}"
+            dest: "{{ dest_full_path }}"
+            mode: "0644"
+          register: copy_result
+
+        - name: "Linux | Verificar que el archivo se copio al destino"
+          ansible.builtin.stat:
+            path: "{{ dest_full_path }}"
+          register: copy_check
+
+        - name: "Linux | Detener si el archivo no se copio al destino"
+          ansible.builtin.fail:
+            msg: "El archivo {{ dest_full_path }} no existe en el host destino"
+          when: not copy_check.stat.exists
+
+        # 2.4) Instalacion (solo si NO estaba instalado)
+        - name: "Linux | Instalar paquete"
+          ansible.builtin.shell: |
+            set -o pipefail
+            {{ _cmd_install_base }} "{{ dest_full_path }}"
+          args:
+            executable: /bin/bash
+          register: install_result
+          failed_when: false
+
       when: not package_installed
-      failed_when: false
 
     # ===========================
     # 6) Post-validacion
@@ -160,9 +159,9 @@
         package_installed_after: "{{ (post_validation.rc | default(1)) == 0 }}"
 
     # ===========================
-    # 6.1) Obtener version
+    # 6.1) Obtener version (robusto, no falla si no hay match)
     # ===========================
-    - name: "Linux | Calcular version instalada"
+    - name: "Linux | Calcular version instalada (robusto con regex_findall)"
       ansible.builtin.set_fact:
         _version_matches: >-
           {{
@@ -170,14 +169,14 @@
             if (_version_regex | default('') | length > 0) else []
           }}
 
-    - name: "Linux | Set version_installed"
+    - name: "Linux | Set version_installed (primer match o vacio)"
       ansible.builtin.set_fact:
         version_installed: "{{ (_version_matches | first) | default('') }}"
 
     # ===========================
     # 6.2) Obtener fecha de instalacion (best-effort)
     # ===========================
-    - name: "Linux | Obtener fecha de instalacion"
+    - name: "Linux | Obtener fecha de instalacion (rpm -qi) (best-effort)"
       ansible.builtin.shell: |
         set -o pipefail
         rpm -qi "{{ _pkg_name }}" | awk -F': ' '/Install Date/ {print $2; exit 0}'
@@ -200,8 +199,9 @@
 
     # ===========================
     # 7) Activation / Start / Status
+    #    - Con timeouts para evitar cuelgues
+    #    - Para SentinelAgent: start → check → activate-if-needed → status
     # ===========================
-
     - name: "Linux | Iniciar servicio/agente (con timeout)"
       ansible.builtin.shell: |
         set -o pipefail
@@ -216,8 +216,7 @@
       changed_when: false
       failed_when: false
 
-    # --- SentinelAgent: validar si ya esta activado
-    - name: "Linux | SentinelAgent | Check activacion"
+    - name: "Linux | SentinelAgent | Check activacion (best-effort, con timeout)"
       ansible.builtin.shell: |
         set -o pipefail
         {{ (pkg.activation_check.cmd | default(_cmd_status)) }} < /dev/null
@@ -257,7 +256,7 @@
         - ((not package_installed) | bool) or (pkg.force_activation | default(false) | bool)
       failed_when: false
 
-    - name: "Linux | SentinelAgent | Ejecutar activacion"
+    - name: "Linux | SentinelAgent | Ejecutar activacion (si hace falta, con timeout)"
       ansible.builtin.shell: |
         set -o pipefail
         {{ _cmd_activation }} < /dev/null
@@ -274,7 +273,7 @@
       changed_when: false
       failed_when: false
 
-    - name: "Linux | SentinelAgent | Verificar status final"
+    - name: "Linux | SentinelAgent | Verificar status final (con timeout)"
       ansible.builtin.shell: |
         set -o pipefail
         {{ _cmd_status }} < /dev/null
@@ -289,8 +288,7 @@
       changed_when: false
       failed_when: false
 
-    # --- Otros paquetes: activation/status opcional (con timeout)
-    - name: "Linux | Ejecutar activacion"
+    - name: "Linux | Ejecutar activacion (otros paquetes, con timeout)"
       ansible.builtin.shell: |
         set -o pipefail
         {{ _cmd_activation }} < /dev/null
@@ -306,7 +304,7 @@
       changed_when: false
       failed_when: false
 
-    - name: "Linux | Verificar status"
+    - name: "Linux | Verificar status (otros paquetes, con timeout)"
       ansible.builtin.shell: |
         set -o pipefail
         {{ _cmd_status }} < /dev/null
@@ -322,7 +320,7 @@
       failed_when: false
 
     # ===========================
-    # 8) Construir resultado de este paquete y APPEND a host_installation_results
+    # 8) Construir resultado del paquete y agregar a host_installation_results
     # ===========================
     - name: "Linux | Construir status final del paquete"
       ansible.builtin.set_fact:
@@ -358,9 +356,9 @@
           }}
 
     # ===========================
-    # 9) Limpieza
+    # 9) Limpieza (opcional)
     # ===========================
-    - name: "Linux | Eliminar archivo copiado en destino"
+    - name: "Linux | Eliminar archivo copiado en destino (opcional)"
       ansible.builtin.file:
         path: "{{ dest_full_path }}"
         state: absent
@@ -388,22 +386,22 @@
           --------------------------------------------
           post_install_validation: {{ _cmd_post_validate }}
           Instalado (antes): {{ package_installed | default('N/A') }}
-          RC pre-validacion: {{ pre_validation.rc | default('N/A') }}
-          OUT pre-validacion: {{ pre_validation.stdout | default('') }}
-          ERR pre-validacion: {{ pre_validation.stderr | default('') }}
+          RC pre-validación: {{ pre_validation.rc | default('N/A') }}
+          OUT pre-validación: {{ pre_validation.stdout | default('') }}
+          ERR pre-validación: {{ pre_validation.stderr | default('') }}
           --------------------------------------------
-          Instalacion ejecutada: {{ (not package_installed) | default(false) }}
-          Codigo instalacion: {{ install_result.rc | default('N/A') }}
-          OUT instalacion: {{ install_result.stdout | default('') }}
-          ERR instalacion: {{ install_result.stderr | default('') }}
+          Instalación ejecutada: {{ (not package_installed) | default(false) }}
+          Código instalación: {{ install_result.rc | default('N/A') }}
+          OUT instalación: {{ install_result.stdout | default('') }}
+          ERR instalación: {{ install_result.stderr | default('') }}
           --------------------------------------------
-          Instalado (despues): {{ package_installed_after | default('N/A') }}
-          RC post-validacion: {{ validation_result.rc | default('N/A') }}
-          OUT post-validacion: {{ validation_result.stdout | default('') }}
-          ERR post-validacion: {{ validation_result.stderr | default('') }}
+          Instalado (después): {{ package_installed_after | default('N/A') }}
+          RC post-validación: {{ validation_result.rc | default('N/A') }}
+          OUT post-validación: {{ validation_result.stdout | default('') }}
+          ERR post-validación: {{ validation_result.stderr | default('') }}
           --------------------------------------------
-          Version instalada: {{ version_installed | default('') }}
-          Fecha instalacion: {{ install_date | default('') }}
+          Versión instalada: {{ version_installed | default('') }}
+          Fecha instalación: {{ install_date | default('') }}
           ============================================
 
   rescue:
@@ -431,7 +429,7 @@
             ]
           }}
 
-    - name: "Linux | Guardar error en log"
+    - name: "Linux | Guardar error en log (fallback seguro)"
       ansible.builtin.copy:
         dest: "{{ _report_dir_effective }}/linux_software_install_{{ inventory_hostname }}.log"
         content: |
