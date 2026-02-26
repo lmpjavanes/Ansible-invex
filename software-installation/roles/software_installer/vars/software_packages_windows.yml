@@ -1,15 +1,9 @@
 ---
-# Configuracion para la instalacion en Windows.
-
-# Ruta base en el NFS accesible desde los servidores Windows
-# windows_software_source: "\\\\kirov01\\SISTEMASOPERATIVOS_WINDOWSLINUX\\Software\\Agente_Nagios\\Nagios"
-windows_software_source: "\\\\VBOXSVR\\kirov01\\SISTEMASOPERATIVOS_WINDOWSLINUX\\Software\\Agente_Nagios\\Nagios"
+# Ruta de destino en los servidores Windows
+windows_dest_path: "C:\\sys\\"
 
 # Archivos a copiar desde la fuente
 windows_files_to_copy:
   - "ncpa-latest.exe"
   - "Instalar_Nagios_KIO.BAT"
   - "Instalar_Nagios_TRIARA.BAT"
-
-# Ruta de destino en los servidores Windows
-windows_dest_path: "C:\\sys\\"

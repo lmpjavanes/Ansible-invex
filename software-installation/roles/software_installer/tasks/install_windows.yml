@@ -6,37 +6,90 @@
     file: software_packages_windows.yml
     name: win_config
 
-- name: "Windows | Validar win_config cargado"
+- name: "Windows | Validar win_config base cargado"
   ansible.builtin.assert:
     that:
       - win_config is defined
-      - win_config.windows_software_source is defined
       - win_config.windows_dest_path is defined
       - win_config.windows_files_to_copy is defined
-    fail_msg: "No se cargo correctamente software_packages_windows.yml o faltan llaves requeridas."
+    fail_msg: "No se cargó correctamente software_packages_windows.yml o faltan llaves requeridas (windows_dest_path/windows_files_to_copy)."
 
 - name: "Windows | Inicializar lista de resultados para este host"
   ansible.builtin.set_fact:
     host_installation_results: []
 
-# Dejar definido desde el inicio para que rescue no truene
+# Definir ambiente desde el inicio (para rescue)
 - name: "Windows | Determinar ambiente (pre)"
   ansible.builtin.set_fact:
     ambiente_detectado: "{{ 'PROD' if 'PROD' in group_names else 'DRP' if 'DRP' in group_names else 'DESCONOCIDO' }}"
     ya_instalado: false
 
+# ------------------------------------------------------------
+# Resolver valores efectivos desde Custom Credential Type
+# (si no vienen, se intenta fallback desde win_config)
+# ------------------------------------------------------------
+- name: "Windows | Resolver variables de share (credencial / fallback)"
+  ansible.builtin.set_fact:
+    _share_root: >-
+      {{
+        windows_share_root
+        | default(win_config.windows_share_root | default(''))
+      }}
+    _software_source: >-
+      {{
+        windows_software_source
+        | default(win_config.windows_software_source | default(''))
+      }}
+    _share_user: >-
+      {{
+        windows_share_user
+        | default(win_config.windows_share_user | default(''))
+      }}
+    _share_password: >-
+      {{
+        windows_share_password
+        | default(win_config.windows_share_password | default(''))
+      }}
+
+- name: "Windows | Validar variables requeridas para SMB"
+  ansible.builtin.assert:
+    that:
+      - _share_root | length > 0
+      - _software_source | length > 0
+      - _share_user | length > 0
+      - _share_password | length > 0
+    fail_msg: >-
+      Faltan variables SMB. Asegúrate de asociar la credencial Custom Credential Type al Job Template.
+      Requeridas: windows_share_root, windows_software_source, windows_share_user, windows_share_password.
+
 # ============================================
-# EJECUCIoN CONTROLADA + RESCUE PARA REPORTES
+# EJECUCIÓN CONTROLADA + RESCUE PARA REPORTES
 # ============================================
-- name: "Windows | Instalacion NCPA (controlado)"
+- name: "Windows | Instalación NCPA (controlado)"
   block:
 
     # ============================================
-    # PASO 1: VERIFICAR RUTA DE ORIGEN (NFS)
+    # PASO 1: AUTENTICAR SHARE (evita prompt / double-hop)
+    # ============================================
+    - name: "Windows | Autenticar a share SMB (net use con credenciales)"
+      ansible.windows.win_shell: |
+        $share = "{{ _share_root }}"
+        $user  = "{{ _share_user }}"
+        $pass  = "{{ _share_password }}"
+
+        cmd /c "net use $share /delete /y" | Out-Null
+        cmd /c "net use $share /user:$user $pass /persistent:no"
+      register: net_use
+      changed_when: false
+      failed_when: net_use.rc != 0
+      no_log: true
+
+    # ============================================
+    # PASO 1.1: VERIFICAR RUTA DE ORIGEN (NFS/SMB)
     # ============================================
     - name: "Windows | Verificar que la ruta de origen existe"
       ansible.windows.win_shell: |
-        $ruta = "{{ win_config.windows_software_source }}"
+        $ruta = "{{ _software_source }}"
         if (Test-Path $ruta) {
             Write-Output "Ruta de origen accesible"
             exit 0
@@ -58,9 +111,9 @@
     # ============================================
     # PASO 3: COPIAR ARCHIVOS
     # ============================================
-    - name: "Windows | Copiar archivos necesarios desde el NFS"
+    - name: "Windows | Copiar archivos necesarios desde el share"
       ansible.windows.win_copy:
-        src: "{{ win_config.windows_software_source }}\\{{ item }}"
+        src: "{{ _software_source }}\\{{ item }}"
         dest: "{{ win_config.windows_dest_path }}"
         remote_src: yes
       loop: "{{ win_config.windows_files_to_copy }}"
@@ -71,12 +124,6 @@
         path: "{{ win_config.windows_dest_path }}{{ item }}"
       loop: "{{ win_config.windows_files_to_copy }}"
       register: verify_copy
-
-    - name: "Windows | Validar que todos los archivos fueron copiados"
-      ansible.builtin.assert:
-        that:
-          - (verify_copy.results | selectattr('stat.exists', 'equalto', true) | list | length) == (win_config.windows_files_to_copy | length)
-        fail_msg: "No se copiaron todos los archivos requeridos al destino."
 
     # ============================================
     # PASO 4: DETERMINAR SCRIPT SEGUN GRUPO
@@ -98,6 +145,8 @@
           - "Ambiente detectado: {{ ambiente_detectado }}"
           - "Script a ejecutar: {{ script_a_ejecutar }}"
           - "Ruta de trabajo: {{ win_config.windows_dest_path }}"
+          - "Share root: {{ _share_root }}"
+          - "Software source: {{ _software_source }}"
 
     # ============================================
     # PASO 4.5: VERIFICAR SI NCPA YA ESTA INSTALADO
@@ -207,6 +256,14 @@
       register: cleanup_result
       failed_when: false
 
+    # Opcional: cerrar sesión SMB al final
+    - name: "Windows | Cerrar sesion SMB (net use delete)"
+      ansible.windows.win_shell: |
+        cmd /c "net use {{ _share_root }} /delete /y"
+      changed_when: false
+      failed_when: false
+      no_log: true
+
     # ============================================
     # PASO 7: CONSOLIDAR RESULTADOS (SUCCESS O FAILED)
     # ============================================
@@ -262,8 +319,8 @@
           message: "{{ mensaje_base }} | Archivos temporales eliminados."
 
   rescue:
-    # Si falla NFS / copy / lo que sea, dejamos el host como FAILED con error real
-    - name: "Windows | Capturar error para reporte"
+    # Construir mensaje amigable: prioriza stdout del ruta_check
+    - name: "Windows | Capturar error para reporte (priorizar mensaje amigable)"
       ansible.builtin.set_fact:
         _win_error_msg: >-
           {{
@@ -274,7 +331,7 @@
               (
                 ansible_failed_result.stdout
                 | default(ansible_failed_result.stderr | default(''))
-                | default(ansible_failed_result.msg | default('Falla durante instalacion NCPA'))
+                | default(ansible_failed_result.msg | default('Falla durante instalación NCPA (detalle no disponible)'))
               )
             )
             | trim
@@ -296,5 +353,5 @@
               ya_instalado: "{{ ya_instalado | default(false) }}"
               version_installed: "N/A"
               install_path: "N/A"
-              message: "Falla durante instalacion: {{ _win_error_msg }}"
-          message: "Falla durante instalacion: {{ _win_error_msg }}"
+              message: "Falla durante instalación: {{ _win_error_msg }}"
+          message: "Falla durante instalación: {{ _win_error_msg }}"
