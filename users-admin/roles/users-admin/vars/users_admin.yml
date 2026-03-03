@@ -1,13 +1,13 @@
 ---
 # ==============================
-# Configuración del rol users-admin
+# Configuracion del rol users-admin
 # (Debe vivir dentro de roles/users-admin/vars para AAP)
 # ==============================
 
-# Operación global:
+# Operacion global:
 #   - create: crea/actualiza usuarios
 #   - delete: elimina usuarios (NO elimina home directory)
-operation: delete
+operation: create
 
 # Base default para HOME cuando no se define 'home'
 home_base: "/home"
@@ -19,18 +19,19 @@ home_base: "/home"
 # Campos por usuario:
 #   username  (requerido)
 #   group     (requerido en create; opcional en delete)
-#   type      (os|ftp) (opcional; default os)
+#   type      (os|ftp)
 #   home      (opcional; default: {{home_base}}/{{username}})
 #   comment   (opcional)
 #   shell     (opcional; si se define, tiene prioridad)
 users:
-  - username: "example_user"
+  - username: "example_user_ftp"
     group: "example_group"
-    type: "os"
+    type: "ftp"
     # home: "/home/example_user"
-    comment: "Usuario de ejemplo"
+    comment: "Usuario FTP de ejemplo"
+    # shell: "/usr/sbin/nologin"
 
-# Opcional: rutas comunes de shell para usuario FTP (según distro)
+# Opcional: rutas comunes de shell para usuario FTP (segun distro)
 ftp_shell_candidates:
   - "/sbin/nologin"
   - "/usr/sbin/nologin"
@@ -40,5 +41,5 @@ ftp_shell_candidates:
 # Ansible user module crea el home con create_home: true cuando aplica.
 create_home: true
 
-# Si quieres permitir que el rol continúe aunque una operación por usuario falle.
+# Si quieres permitir que el rol continue aunque una operacion por usuario falle.
 continue_on_user_error: true

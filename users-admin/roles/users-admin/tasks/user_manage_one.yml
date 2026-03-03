@@ -16,11 +16,11 @@
     _u_home: "{{ usr.home | default(users_admin_home_base ~ '/' ~ (usr.username | string)) }}"
     _u_comment: "{{ usr.comment | default('') | string }}"
 
-- name: Validar group en operación create
+- name: Validar group en operacion create
   ansible.builtin.assert:
     that:
       - users_admin_operation != 'create' or (_u_group | length) > 0
-    fail_msg: "En operación create, el usuario '{{ _u_name }}' debe incluir 'group'."
+    fail_msg: "En operacion create, el usuario '{{ _u_name }}' debe incluir 'group'."
 
 - name: Resolver shell final
   ansible.builtin.set_fact:
@@ -34,7 +34,7 @@
         )
       }}
 
-- name: Ejecutar operación (block/rescue)
+- name: Ejecutar operacion
   block:
     - name: Create | Asegurar grupo existe
       ansible.builtin.group:

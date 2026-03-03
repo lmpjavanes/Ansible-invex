@@ -23,12 +23,12 @@
   ansible.builtin.meta: end_host
   when: host_unavailable
 
-- name: Cargar configuración del rol (vars)
+- name: Cargar configuracion del rol (vars)
   ansible.builtin.include_vars:
     file: "{{ role_path }}/vars/users_admin.yml"
     name: cfg
 
-- name: Normalizar operación y defaults
+- name: Normalizar operacion y defaults
   ansible.builtin.set_fact:
     users_admin_operation: "{{ (cfg.operation | default('create')) | lower }}"
     users_admin_users: "{{ cfg.users | default([]) }}"
@@ -41,7 +41,7 @@
   ansible.builtin.set_fact:
     users_admin_ops: []
 
-- name: Validar operación
+- name: Validar operacion
   ansible.builtin.assert:
     that:
       - users_admin_operation in ['create','delete']
@@ -51,9 +51,9 @@
   ansible.builtin.assert:
     that:
       - (users_admin_users | length) > 0
-    fail_msg: "La lista cfg.users está vacía. Edita roles/users-admin/vars/users_admin.yml y agrega usuarios."
+    fail_msg: "La lista cfg.users esta vacia. Edita roles/users-admin/vars/users_admin.yml y agrega usuarios."
 
-- name: Ejecutar operación por usuario
+- name: Ejecutar operacion por usuario
   ansible.builtin.include_tasks: user_manage_one.yml
   loop: "{{ users_admin_users }}"
   loop_control:
