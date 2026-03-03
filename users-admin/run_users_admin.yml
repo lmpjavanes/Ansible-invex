@@ -1,0 +1,53 @@
+---
+# Playbook: users-admin
+# Objetivo: Crear/Eliminar usuarios en servidores Linux y generar reportes (CSV/HTML) desde el nodo controlador.
+
+- name: Users Admin (Linux)
+  hosts: LINUX
+  gather_facts: yes
+  become: yes
+  ignore_unreachable: true
+  any_errors_fatal: false
+  max_fail_percentage: 100
+  roles:
+    - users-admin
+
+- name: Generar reportes (control)
+  hosts: invd-ts-ansible
+  gather_facts: yes
+  vars:
+    report_ts: "{{ ansible_date_time.iso8601_basic_short }}"
+    report_dir: "/reportes_ansible/users-admin/{{ report_ts }}"
+  tasks:
+    - name: Crear directorio del reporte
+      ansible.builtin.file:
+        path: "{{ report_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Inicializar lista consolidada Linux
+      ansible.builtin.set_fact:
+        audit_linux: []
+
+    - name: Consolidar resultados LINUX (incluye no disponibles)
+      ansible.builtin.set_fact:
+        audit_linux: "{{ audit_linux + [ host_result ] }}"
+      vars:
+        host_result: >-
+          {{
+            hostvars[item].users_admin_asset
+            | default({
+                'host': item,
+                'os_family': 'Linux',
+                'status': 'unavailable',
+                'checked_at': ansible_date_time.iso8601,
+                'message': 'Servidor no disponible',
+                'operations': []
+              })
+          }}
+      loop: "{{ groups['LINUX'] | default([]) }}"
+
+    - name: Renderizar reportes usando templates del rol
+      ansible.builtin.include_role:
+        name: users-admin
+        tasks_from: render_reports.yml

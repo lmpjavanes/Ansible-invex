@@ -1,0 +1,106 @@
+---
+# Maneja 1 usuario (usr) y agrega el resultado a users_admin_ops
+
+- name: Validar username
+  ansible.builtin.assert:
+    that:
+      - usr.username is defined
+      - (usr.username | string | length) > 0
+    fail_msg: "Cada elemento en cfg.users debe incluir 'username'."
+
+- name: Resolver defaults por usuario
+  ansible.builtin.set_fact:
+    _u_name: "{{ usr.username | string }}"
+    _u_type: "{{ (usr.type | default('os')) | lower }}"
+    _u_group: "{{ usr.group | default('') | string }}"
+    _u_home: "{{ usr.home | default(users_admin_home_base ~ '/' ~ (usr.username | string)) }}"
+    _u_comment: "{{ usr.comment | default('') | string }}"
+
+- name: Validar group en operación create
+  ansible.builtin.assert:
+    that:
+      - users_admin_operation != 'create' or (_u_group | length) > 0
+    fail_msg: "En operación create, el usuario '{{ _u_name }}' debe incluir 'group'."
+
+- name: Resolver shell final
+  ansible.builtin.set_fact:
+    _u_shell: >-
+      {{
+        usr.shell
+        | default(
+            (users_admin_ftp_shell_candidates | first)
+            if _u_type == 'ftp'
+            else '/bin/bash'
+        )
+      }}
+
+- name: Ejecutar operación (block/rescue)
+  block:
+    - name: Create | Asegurar grupo existe
+      ansible.builtin.group:
+        name: "{{ _u_group }}"
+        state: present
+      when: users_admin_operation == 'create'
+      register: _group_res
+
+    - name: Create | Crear/actualizar usuario
+      ansible.builtin.user:
+        name: "{{ _u_name }}"
+        group: "{{ _u_group }}"
+        home: "{{ _u_home }}"
+        shell: "{{ _u_shell }}"
+        comment: "{{ _u_comment if (_u_comment | length) > 0 else omit }}"
+        create_home: "{{ users_admin_create_home }}"
+        state: present
+      when: users_admin_operation == 'create'
+      register: _user_res
+
+    - name: Delete | Eliminar usuario (sin borrar home)
+      ansible.builtin.user:
+        name: "{{ _u_name }}"
+        state: absent
+        remove: false
+      when: users_admin_operation == 'delete'
+      register: _user_res
+
+    - name: Construir resultado OK
+      ansible.builtin.set_fact:
+        _op_result:
+          username: "{{ _u_name }}"
+          action: "{{ users_admin_operation }}"
+          user_type: "{{ _u_type }}"
+          group: "{{ _u_group }}"
+          home: "{{ _u_home }}"
+          shell: "{{ _u_shell }}"
+          changed: "{{ _user_res.changed | default(false) }}"
+          status: "ok"
+          message: ""
+
+  rescue:
+    - name: Capturar error
+      ansible.builtin.set_fact:
+        _op_result:
+          username: "{{ _u_name }}"
+          action: "{{ users_admin_operation }}"
+          user_type: "{{ _u_type }}"
+          group: "{{ _u_group }}"
+          home: "{{ _u_home }}"
+          shell: "{{ _u_shell }}"
+          changed: false
+          status: "error"
+          message: >-
+            {{
+              (ansible_failed_result.msg
+               | default(ansible_failed_result.stderr)
+               | default('Error desconocido'))
+              | regex_replace('[\r\n]+',' ')
+            }}
+
+    - name: Fallar si no se permite continuar
+      ansible.builtin.fail:
+        msg: "Fallo gestionando usuario {{ _u_name }} y continue_on_user_error=false."
+      when: not users_admin_continue_on_error
+
+- name: Agregar resultado a lista del host
+  ansible.builtin.set_fact:
+    users_admin_ops: "{{ users_admin_ops + [ _op_result ] }}"

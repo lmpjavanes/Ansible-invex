@@ -1,0 +1,81 @@
+---
+- name: Definir os_family seguro
+  ansible.builtin.set_fact:
+    os_family_safe: "{{ ansible_os_family | default('unknown') }}"
+
+- name: Detectar host no disponible
+  ansible.builtin.set_fact:
+    host_unavailable: "{{ os_family_safe == 'unknown' }}"
+
+- name: Marcar resultado como servidor no disponible
+  ansible.builtin.set_fact:
+    users_admin_asset:
+      host: "{{ inventory_hostname }}"
+      os_family: "{{ os_family_safe }}"
+      checked_at: "{{ ansible_date_time.iso8601 | default('') }}"
+      status: "unavailable"
+      message: "Servidor no disponible"
+      operation: ""
+      operations: []
+  when: host_unavailable
+
+- name: Terminar role en host no disponible
+  ansible.builtin.meta: end_host
+  when: host_unavailable
+
+- name: Cargar configuración del rol (vars)
+  ansible.builtin.include_vars:
+    file: "{{ role_path }}/vars/users_admin.yml"
+    name: cfg
+
+- name: Normalizar operación y defaults
+  ansible.builtin.set_fact:
+    users_admin_operation: "{{ (cfg.operation | default('create')) | lower }}"
+    users_admin_users: "{{ cfg.users | default([]) }}"
+    users_admin_home_base: "{{ cfg.home_base | default('/home') }}"
+    users_admin_create_home: "{{ cfg.create_home | default(true) | bool }}"
+    users_admin_continue_on_error: "{{ cfg.continue_on_user_error | default(true) | bool }}"
+    users_admin_ftp_shell_candidates: "{{ cfg.ftp_shell_candidates | default(['/sbin/nologin','/usr/sbin/nologin','/bin/false']) }}"
+
+- name: Inicializar lista de operaciones por host
+  ansible.builtin.set_fact:
+    users_admin_ops: []
+
+- name: Validar operación
+  ansible.builtin.assert:
+    that:
+      - users_admin_operation in ['create','delete']
+    fail_msg: "Operacion invalida: {{ users_admin_operation }}. Usa create o delete."
+
+- name: Validar que exista al menos un usuario en cfg.users
+  ansible.builtin.assert:
+    that:
+      - (users_admin_users | length) > 0
+    fail_msg: "La lista cfg.users está vacía. Edita roles/users-admin/vars/users_admin.yml y agrega usuarios."
+
+- name: Ejecutar operación por usuario
+  ansible.builtin.include_tasks: user_manage_one.yml
+  loop: "{{ users_admin_users }}"
+  loop_control:
+    loop_var: usr
+    label: "{{ usr.username | default('undefined') }}"
+
+- name: Determinar estado final del host
+  ansible.builtin.set_fact:
+    host_status: >-
+      {{
+        'error'
+        if (users_admin_ops | selectattr('status','equalto','error') | list | length) > 0
+        else 'ok'
+      }}
+
+- name: Construir asset final para reportes
+  ansible.builtin.set_fact:
+    users_admin_asset:
+      host: "{{ inventory_hostname }}"
+      os_family: "Linux"
+      checked_at: "{{ ansible_date_time.iso8601 }}"
+      status: "{{ host_status }}"
+      message: ""
+      operation: "{{ users_admin_operation }}"
+      operations: "{{ users_admin_ops }}"
