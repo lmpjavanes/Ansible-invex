@@ -1,13 +1,8 @@
 ---
-# ==============================
-# Configuracion del rol users-admin
-# (Debe vivir dentro de roles/users-admin/vars para AAP)
-# ==============================
-
 # Operacion global:
 #   - create: crea/actualiza usuarios
 #   - delete: elimina usuarios (NO elimina home directory)
-operation: create
+operation: delete
 
 # Base default para HOME cuando no se define 'home'
 home_base: "/home"
