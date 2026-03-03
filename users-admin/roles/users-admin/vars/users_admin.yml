@@ -23,7 +23,7 @@ users:
     group: "example_group"
     type: "os"
     # home: "/home/example_user"
-    comment: "Usuario FTP de ejemplo"
+    comment: "Usuario OS de ejemplo"
     # shell: "/usr/sbin/nologin"
 
 # Opcional: rutas comunes de shell para usuario FTP (segun distro)
