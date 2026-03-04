@@ -13,17 +13,9 @@
     _u_name: "{{ usr.username | string }}"
     _u_type: "{{ (usr.type | default('os')) | lower }}"
     _u_group: "{{ usr.group | default('') | string }}"
-    # Grupos secundarios (opcionales). Acepta 'extra_groups' (recomendado)
-    # o 'groups' por compatibilidad.
     _u_extra_groups: "{{ (usr.extra_groups | default(usr.groups | default([]))) | map('string') | list }}"
     _u_home: "{{ usr.home | default(users_admin_home_base ~ '/' ~ (usr.username | string)) }}"
     _u_comment: "{{ usr.comment | default('') | string }}"
-
-- name: Validar group en operacion create
-  ansible.builtin.assert:
-    that:
-      - users_admin_operation != 'create' or (_u_group | length) > 0
-    fail_msg: "En operacion create, el usuario '{{ _u_name }}' debe incluir 'group'."
 
 - name: Resolver shell final
   ansible.builtin.set_fact:
@@ -37,165 +29,168 @@
         )
       }}
 
-- name: Ejecutar operacion
-  block:
-    - name: Create | Asegurar grupo existe
-      ansible.builtin.group:
-        name: "{{ _u_group }}"
-        state: present
-      when: users_admin_operation == 'create'
-      register: _group_res
+############################################################
+# Generar password seguro
+############################################################
 
-    - name: Create | Asegurar grupos extra existen
-      ansible.builtin.group:
-        name: "{{ item }}"
-        state: present
-      loop: "{{ _u_extra_groups }}"
-      when:
-        - users_admin_operation == 'create'
-        - (_u_extra_groups | length) > 0
-      register: _extra_groups_res
+- name: Generar password seguro
+  ansible.builtin.set_fact:
+    _u_password_plain: >-
+      {{
+        lookup(
+          'ansible.builtin.password',
+          '/dev/null',
+          'length=20 chars=ascii_letters,digits,.,:,_,@,-,!,#,%,^,&,*,?,+'
+        )
+      }}
+  no_log: true
+  when: users_admin_operation == 'create'
 
-    - name: Create | Crear/actualizar usuario
-      ansible.builtin.user:
-        name: "{{ _u_name }}"
-        group: "{{ _u_group }}"
-        groups: "{{ _u_extra_groups if (_u_extra_groups | length) > 0 else omit }}"
-        append: true
-        home: "{{ _u_home }}"
-        shell: "{{ _u_shell }}"
-        comment: "{{ _u_comment if (_u_comment | length) > 0 else omit }}"
-        create_home: "{{ users_admin_create_home }}"
-        state: present
-      when: users_admin_operation == 'create'
-      register: _user_res
+- name: Generar hash SHA512
+  ansible.builtin.set_fact:
+    _u_password_hash: "{{ _u_password_plain | password_hash('sha512') }}"
+  no_log: true
+  when: users_admin_operation == 'create'
 
-    # -------------------------------------------------------------------------
-    # AJUSTE NUEVO: SOLO usuarios tipo OS -> agregar a AllowUsers y reiniciar sshd
-    # -------------------------------------------------------------------------
-    - name: OS | Leer linea AllowUsers (si existe)
-      ansible.builtin.shell: "grep -E '^\\s*AllowUsers\\b' /etc/ssh/sshd_config || true"
-      register: _allowusers_grep
-      changed_when: false
-      when:
-        - users_admin_operation == 'create'
-        - _u_type == 'os'
+############################################################
+# Crear grupo si no existe
+############################################################
 
-    - name: OS | Calcular nueva linea AllowUsers (agregando usuario si falta)
-      ansible.builtin.set_fact:
-        _allowusers_new_line: >-
-          {%- set line = (_allowusers_grep.stdout | default('') | trim) -%}
-          {%- if line | length == 0 -%}
-          AllowUsers {{ _u_name }}
-          {%- else -%}
-          {%- set parts = (line.split()) -%}
-          {%- set current_users = (parts[1:] if (parts | length) > 1 else []) -%}
-          {%- if _u_name in current_users -%}
-          {{ line }}
-          {%- else -%}
-          AllowUsers {{ (current_users + [_u_name]) | join(' ') }}
-          {%- endif -%}
-          {%- endif -%}
-      when:
-        - users_admin_operation == 'create'
-        - _u_type == 'os'
+- name: Crear grupo primario
+  ansible.builtin.group:
+    name: "{{ _u_group }}"
+    state: present
+  when:
+    - users_admin_operation == 'create'
+    - (_u_group | length) > 0
 
-    - name: OS | Asegurar AllowUsers contiene el usuario en sshd_config
-      ansible.builtin.lineinfile:
-        path: /etc/ssh/sshd_config
-        regexp: '^\s*AllowUsers\b.*'
-        line: "{{ _allowusers_new_line }}"
-        create: false
-        backup: true
-      register: _sshd_allowusers_res
-      when:
-        - users_admin_operation == 'create'
-        - _u_type == 'os'
+- name: Crear grupos extra si no existen
+  ansible.builtin.group:
+    name: "{{ item }}"
+    state: present
+  loop: "{{ _u_extra_groups }}"
+  when:
+    - users_admin_operation == 'create'
+    - (_u_extra_groups | length) > 0
 
-    - name: OS | Validar configuracion sshd antes de reiniciar
-      ansible.builtin.command: sshd -t
-      changed_when: false
-      when:
-        - users_admin_operation == 'create'
-        - _u_type == 'os'
-        - _sshd_allowusers_res is defined
-        - _sshd_allowusers_res.changed | default(false)
+############################################################
+# Crear usuario
+############################################################
 
-    - name: OS | Restart sshd (solo si hubo cambio en sshd_config)
-      ansible.builtin.systemd:
-        name: sshd
-        state: restarted
-      register: _sshd_restart_res
-      when:
-        - users_admin_operation == 'create'
-        - _u_type == 'os'
-        - _sshd_allowusers_res is defined
-        - _sshd_allowusers_res.changed | default(false)
+- name: Crear usuario
+  ansible.builtin.user:
+    name: "{{ _u_name }}"
+    group: "{{ _u_group }}"
+    groups: "{{ _u_extra_groups if (_u_extra_groups | length) > 0 else omit }}"
+    append: true
+    home: "{{ _u_home }}"
+    shell: "{{ _u_shell }}"
+    comment: "{{ _u_comment if (_u_comment | length) > 0 else omit }}"
+    create_home: true
+    password: "{{ _u_password_hash }}"
+    update_password: on_create
+    state: present
+  register: _user_res
+  when: users_admin_operation == 'create'
+  no_log: true
 
-    - name: Delete | Eliminar usuario (sin borrar home)
-      ansible.builtin.user:
-        name: "{{ _u_name }}"
-        state: absent
-        remove: false
-      when: users_admin_operation == 'delete'
-      register: _user_res
+############################################################
+# Expiración password
+############################################################
 
-    - name: Consolidar changed (usuario + sshd_config + restart)
-      ansible.builtin.set_fact:
-        _combined_changed: >-
-          {{
-            (_user_res.changed | default(false))
-            or (_sshd_allowusers_res.changed | default(false))
-            or (_sshd_restart_res.changed | default(false))
-          }}
+- name: Configurar expiracion password
+  ansible.builtin.command: "chage -m 0 -M 99999 -E -1 {{ _u_name }}"
+  become: true
+  when: users_admin_operation == 'create'
 
-    - name: Construir resultado OK
-      ansible.builtin.set_fact:
-        _op_result:
-          username: "{{ _u_name }}"
-          action: "{{ users_admin_operation }}"
-          user_type: "{{ _u_type }}"
-          group: "{{ _u_group }}"
-          extra_groups: "{{ _u_extra_groups }}"
-          home: "{{ _u_home }}"
-          shell: "{{ _u_shell }}"
-          changed: "{{ _combined_changed | default(_user_res.changed | default(false)) }}"
-          status: "ok"
-          message: >-
-            {{
-              (
-                'Usuario OS agregado a AllowUsers y sshd reiniciado.'
-                if (users_admin_operation == 'create' and _u_type == 'os' and (_sshd_allowusers_res.changed | default(false)))
-                else ''
-              )
-            }}
+- name: Obtener informacion de expiracion
+  ansible.builtin.command: "chage -l {{ _u_name }}"
+  register: _chage_info
+  changed_when: false
+  failed_when: false
+  when: users_admin_operation == 'create'
 
-  rescue:
-    - name: Capturar error
-      ansible.builtin.set_fact:
-        _op_result:
-          username: "{{ _u_name }}"
-          action: "{{ users_admin_operation }}"
-          user_type: "{{ _u_type }}"
-          group: "{{ _u_group }}"
-          extra_groups: "{{ _u_extra_groups | default([]) }}"
-          home: "{{ _u_home }}"
-          shell: "{{ _u_shell }}"
-          changed: false
-          status: "error"
-          message: >-
-            {{
-              (ansible_failed_result.msg
-               | default(ansible_failed_result.stderr)
-               | default('Error desconocido'))
-              | regex_replace('[\r\n]+',' ')
-            }}
+############################################################
+# Ajuste SSH AllowUsers (solo OS)
+############################################################
 
-    - name: Fallar si no se permite continuar
-      ansible.builtin.fail:
-        msg: "Fallo gestionando usuario {{ _u_name }} y continue_on_user_error=false."
-      when: not users_admin_continue_on_error
+- name: Leer AllowUsers actual
+  ansible.builtin.shell: "grep -E '^AllowUsers' /etc/ssh/sshd_config || true"
+  register: _allowusers_line
+  changed_when: false
+  when:
+    - users_admin_operation == 'create'
+    - _u_type == 'os'
+  become: true
+
+- name: Construir nueva linea AllowUsers
+  ansible.builtin.set_fact:
+    _allowusers_new: >-
+      {{
+        (_allowusers_line.stdout + " " + _u_name)
+        if (_u_name not in _allowusers_line.stdout)
+        else _allowusers_line.stdout
+      }}
+  when:
+    - users_admin_operation == 'create'
+    - _u_type == 'os'
+
+- name: Actualizar AllowUsers
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^AllowUsers'
+    line: "{{ _allowusers_new }}"
+  when:
+    - users_admin_operation == 'create'
+    - _u_type == 'os'
+  become: true
+  register: _sshd_update
+
+- name: Reiniciar sshd si cambio configuracion
+  ansible.builtin.systemd:
+    name: sshd
+    state: restarted
+  when:
+    - users_admin_operation == 'create'
+    - _u_type == 'os'
+    - _sshd_update.changed
+  become: true
+
+############################################################
+# Eliminación usuario
+############################################################
+
+- name: Eliminar usuario
+  ansible.builtin.user:
+    name: "{{ _u_name }}"
+    state: absent
+    remove: false
+  when: users_admin_operation == 'delete'
+  register: _user_res
+
+############################################################
+# Construir resultado para reportes
+############################################################
+
+- name: Construir resultado
+  ansible.builtin.set_fact:
+    _op_result:
+      username: "{{ _u_name }}"
+      action: "{{ users_admin_operation }}"
+      user_type: "{{ _u_type }}"
+      group: "{{ _u_group }}"
+      extra_groups: "{{ _u_extra_groups }}"
+      home: "{{ _u_home }}"
+      shell: "{{ _u_shell }}"
+      changed: "{{ _user_res.changed | default(false) }}"
+      status: "ok"
+      message: ""
+      chage_info: "{{ _chage_info.stdout | default('') | regex_replace('[\\r\\n]+',' | ') }}"
+      password_generated: true
+      password_plain: "{{ _u_password_plain }}"
+  no_log: true
 
 - name: Agregar resultado a lista del host
   ansible.builtin.set_fact:
-    users_admin_ops: "{{ users_admin_ops + [ _op_result ] }}"
+    users_admin_ops: "{{ users_admin_ops + [_op_result] }}"
+  no_log: true

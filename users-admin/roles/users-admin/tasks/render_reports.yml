@@ -19,6 +19,9 @@
     audit_linux: "{{ audit_linux | default([]) }}"
   run_once: true
 
+# -------------------------
+# Reportes base
+# -------------------------
 - name: Reporte CSV (Users Admin Linux)
   ansible.builtin.template:
     src: linux_users_admin.csv.j2
@@ -35,10 +38,80 @@
   delegate_to: invd-ts-ansible
   run_once: true
 
+# -------------------------
+# Passwords: TXT temporal + cifrado a .vault con env var de AAP
+# -------------------------
+- name: Obtener vault password desde env var (AAP Custom Credential)
+  ansible.builtin.set_fact:
+    _users_admin_vault_pass: "{{ lookup('ansible.builtin.env', 'USERS_ADMIN_VAULT_PASS') | default('', true) }}"
+  run_once: true
+  no_log: true
+
+- name: Validar que USERS_ADMIN_VAULT_PASS venga definido desde AAP
+  ansible.builtin.assert:
+    that:
+      - (_users_admin_vault_pass | length) > 0
+    fail_msg: >-
+      No se detecto la env var USERS_ADMIN_VAULT_PASS.
+      Verifica que el Job Template tenga asociado el Credential (custom) que inyecta USERS_ADMIN_VAULT_PASS.
+  run_once: true
+  no_log: true
+
+- name: Verificar que ansible-vault exista en invd-ts-ansible
+  ansible.builtin.command: "command -v ansible-vault"
+  delegate_to: invd-ts-ansible
+  run_once: true
+  changed_when: false
+
+- name: Generar TXT de passwords (temporal, en claro)
+  ansible.builtin.template:
+    src: linux_users_passwords.txt.j2
+    dest: "{{ report_dir }}/linux_users_passwords.txt"
+    mode: "0600"
+  delegate_to: invd-ts-ansible
+  run_once: true
+  no_log: true
+
+- name: Crear vault password file temporal (solo runtime)
+  ansible.builtin.copy:
+    dest: "{{ report_dir }}/.users_admin_vault_pass.tmp"
+    content: "{{ _users_admin_vault_pass }}"
+    mode: "0600"
+  delegate_to: invd-ts-ansible
+  run_once: true
+  no_log: true
+
+- name: Cifrar TXT a .vault (output junto a reportes)
+  ansible.builtin.command: >
+    ansible-vault encrypt
+    {{ report_dir }}/linux_users_passwords.txt
+    --output {{ report_dir }}/linux_users_passwords.txt.vault
+    --vault-password-file {{ report_dir }}/.users_admin_vault_pass.tmp
+  delegate_to: invd-ts-ansible
+  run_once: true
+  no_log: true
+
+- name: Borrar TXT en claro
+  ansible.builtin.file:
+    path: "{{ report_dir }}/linux_users_passwords.txt"
+    state: absent
+  delegate_to: invd-ts-ansible
+  run_once: true
+  no_log: true
+
+- name: Borrar vault password file temporal
+  ansible.builtin.file:
+    path: "{{ report_dir }}/.users_admin_vault_pass.tmp"
+    state: absent
+  delegate_to: invd-ts-ansible
+  run_once: true
+  no_log: true
+
 - name: Mostrar rutas de salida
   ansible.builtin.debug:
     msg:
       - "Reportes generados en: {{ report_dir }}"
       - "Linux CSV : {{ report_dir }}/linux_users_admin.csv"
       - "Linux HTML: {{ report_dir }}/linux_users_admin.html"
+      - "Passwords (Vault): {{ report_dir }}/linux_users_passwords.txt.vault"
   run_once: true

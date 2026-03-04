@@ -10,11 +10,12 @@
     th { background: #f2f2f2; position: sticky; top: 0; }
     .bad { color: #b00020; font-weight: bold; }
     .ok  { color: #1b5e20; font-weight: bold; }
+    .mono { font-family: Consolas, Monaco, monospace; font-size: 12px; white-space: pre-wrap; }
   </style>
 </head>
 <body>
   <h2>Linux Users Admin</h2>
-  <p>Este reporte consolida la ejecución del playbook <b>users-admin</b> (crear/eliminar usuarios) por host y por usuario.</p>
+  <p>Reporte consolidado del rol <b>users-admin</b> (crear/eliminar usuarios) por host y por usuario.</p>
 
   <table>
     <tr>
@@ -26,11 +27,12 @@
       <th>Acción</th>
       <th>Tipo</th>
       <th>Grupo</th>
-      <th>Grupos extra</th>
+      <th>Extra groups</th>
       <th>Home</th>
       <th>Shell</th>
       <th>Changed</th>
       <th>Status</th>
+      <th>Chage info</th>
       <th>Mensaje</th>
     </tr>
 
@@ -45,6 +47,7 @@
           <td></td><td></td><td></td><td></td><td></td><td></td><td></td>
           <td></td>
           <td class="bad">{{ h.status | default('') }}</td>
+          <td class="mono"></td>
           <td class="bad">{{ h.message | default('') }}</td>
         </tr>
       {% else %}
@@ -58,17 +61,12 @@
           <td>{{ op.action | default('') }}</td>
           <td>{{ op.user_type | default('') }}</td>
           <td>{{ op.group | default('') }}</td>
-
-          {# Extra Groups: vacío si no existe o lista vacía #}
-          <td>
-            {% set eg = op.extra_groups | default([]) %}
-            {{ (eg | join(' | ')) if (eg | length > 0) else '' }}
-          </td>
-
+          <td>{{ (op.extra_groups | default([])) | join(', ') if (op.extra_groups | default([]) | length) > 0 else '' }}</td>
           <td>{{ op.home | default('') }}</td>
           <td>{{ op.shell | default('') }}</td>
           <td>{{ op.changed | default(false) }}</td>
           <td class="{{ 'bad' if (op.status | default('')) != 'ok' else 'ok' }}">{{ op.status | default('') }}</td>
+          <td class="mono">{{ op.chage_info | default('') }}</td>
           <td class="{{ 'bad' if (op.status | default('')) != 'ok' else '' }}">{{ op.message | default('') }}</td>
         </tr>
         {% endfor %}
