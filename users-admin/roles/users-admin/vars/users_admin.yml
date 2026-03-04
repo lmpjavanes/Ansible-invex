@@ -19,8 +19,11 @@ home_base: "/home"
 #   comment   (opcional)
 #   shell     (opcional; si se define, tiene prioridad)
 users:
-  - username: "example_user_os"
+  - username: "example_user_os2"
     group: "example_group"
+    extra_groups:
+      - "sftpusers"
+      - "auditoria"
     type: "os"
     # home: "/home/example_user"
     comment: "Usuario OS de ejemplo"

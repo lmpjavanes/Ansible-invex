@@ -13,6 +13,9 @@
     _u_name: "{{ usr.username | string }}"
     _u_type: "{{ (usr.type | default('os')) | lower }}"
     _u_group: "{{ usr.group | default('') | string }}"
+    # Grupos secundarios (opcionales). Acepta 'extra_groups' (recomendado)
+    # o 'groups' por compatibilidad.
+    _u_extra_groups: "{{ (usr.extra_groups | default(usr.groups | default([]))) | map('string') | list }}"
     _u_home: "{{ usr.home | default(users_admin_home_base ~ '/' ~ (usr.username | string)) }}"
     _u_comment: "{{ usr.comment | default('') | string }}"
 
@@ -43,10 +46,22 @@
       when: users_admin_operation == 'create'
       register: _group_res
 
+    - name: Create | Asegurar grupos extra existen
+      ansible.builtin.group:
+        name: "{{ item }}"
+        state: present
+      loop: "{{ _u_extra_groups }}"
+      when:
+        - users_admin_operation == 'create'
+        - (_u_extra_groups | length) > 0
+      register: _extra_groups_res
+
     - name: Create | Crear/actualizar usuario
       ansible.builtin.user:
         name: "{{ _u_name }}"
         group: "{{ _u_group }}"
+        groups: "{{ _u_extra_groups if (_u_extra_groups | length) > 0 else omit }}"
+        append: true
         home: "{{ _u_home }}"
         shell: "{{ _u_shell }}"
         comment: "{{ _u_comment if (_u_comment | length) > 0 else omit }}"
@@ -70,6 +85,7 @@
           action: "{{ users_admin_operation }}"
           user_type: "{{ _u_type }}"
           group: "{{ _u_group }}"
+          extra_groups: "{{ _u_extra_groups }}"
           home: "{{ _u_home }}"
           shell: "{{ _u_shell }}"
           changed: "{{ _user_res.changed | default(false) }}"
@@ -84,6 +100,7 @@
           action: "{{ users_admin_operation }}"
           user_type: "{{ _u_type }}"
           group: "{{ _u_group }}"
+          extra_groups: "{{ _u_extra_groups }}"
           home: "{{ _u_home }}"
           shell: "{{ _u_shell }}"
           changed: false
