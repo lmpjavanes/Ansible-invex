@@ -70,6 +70,68 @@
       when: users_admin_operation == 'create'
       register: _user_res
 
+    # -------------------------------------------------------------------------
+    # AJUSTE NUEVO: SOLO usuarios tipo OS -> agregar a AllowUsers y reiniciar sshd
+    # -------------------------------------------------------------------------
+    - name: OS | Leer linea AllowUsers (si existe)
+      ansible.builtin.shell: "grep -E '^\\s*AllowUsers\\b' /etc/ssh/sshd_config || true"
+      register: _allowusers_grep
+      changed_when: false
+      when:
+        - users_admin_operation == 'create'
+        - _u_type == 'os'
+
+    - name: OS | Calcular nueva linea AllowUsers (agregando usuario si falta)
+      ansible.builtin.set_fact:
+        _allowusers_new_line: >-
+          {%- set line = (_allowusers_grep.stdout | default('') | trim) -%}
+          {%- if line | length == 0 -%}
+          AllowUsers {{ _u_name }}
+          {%- else -%}
+          {%- set parts = (line.split()) -%}
+          {%- set current_users = (parts[1:] if (parts | length) > 1 else []) -%}
+          {%- if _u_name in current_users -%}
+          {{ line }}
+          {%- else -%}
+          AllowUsers {{ (current_users + [_u_name]) | join(' ') }}
+          {%- endif -%}
+          {%- endif -%}
+      when:
+        - users_admin_operation == 'create'
+        - _u_type == 'os'
+
+    - name: OS | Asegurar AllowUsers contiene el usuario en sshd_config
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^\s*AllowUsers\b.*'
+        line: "{{ _allowusers_new_line }}"
+        create: false
+        backup: true
+      register: _sshd_allowusers_res
+      when:
+        - users_admin_operation == 'create'
+        - _u_type == 'os'
+
+    - name: OS | Validar configuracion sshd antes de reiniciar
+      ansible.builtin.command: sshd -t
+      changed_when: false
+      when:
+        - users_admin_operation == 'create'
+        - _u_type == 'os'
+        - _sshd_allowusers_res is defined
+        - _sshd_allowusers_res.changed | default(false)
+
+    - name: OS | Restart sshd (solo si hubo cambio en sshd_config)
+      ansible.builtin.systemd:
+        name: sshd
+        state: restarted
+      register: _sshd_restart_res
+      when:
+        - users_admin_operation == 'create'
+        - _u_type == 'os'
+        - _sshd_allowusers_res is defined
+        - _sshd_allowusers_res.changed | default(false)
+
     - name: Delete | Eliminar usuario (sin borrar home)
       ansible.builtin.user:
         name: "{{ _u_name }}"
@@ -77,6 +139,15 @@
         remove: false
       when: users_admin_operation == 'delete'
       register: _user_res
+
+    - name: Consolidar changed (usuario + sshd_config + restart)
+      ansible.builtin.set_fact:
+        _combined_changed: >-
+          {{
+            (_user_res.changed | default(false))
+            or (_sshd_allowusers_res.changed | default(false))
+            or (_sshd_restart_res.changed | default(false))
+          }}
 
     - name: Construir resultado OK
       ansible.builtin.set_fact:
@@ -88,9 +159,16 @@
           extra_groups: "{{ _u_extra_groups }}"
           home: "{{ _u_home }}"
           shell: "{{ _u_shell }}"
-          changed: "{{ _user_res.changed | default(false) }}"
+          changed: "{{ _combined_changed | default(_user_res.changed | default(false)) }}"
           status: "ok"
-          message: ""
+          message: >-
+            {{
+              (
+                'Usuario OS agregado a AllowUsers y sshd reiniciado.'
+                if (users_admin_operation == 'create' and _u_type == 'os' and (_sshd_allowusers_res.changed | default(false)))
+                else ''
+              )
+            }}
 
   rescue:
     - name: Capturar error
@@ -100,7 +178,7 @@
           action: "{{ users_admin_operation }}"
           user_type: "{{ _u_type }}"
           group: "{{ _u_group }}"
-          extra_groups: "{{ _u_extra_groups }}"
+          extra_groups: "{{ _u_extra_groups | default([]) }}"
           home: "{{ _u_home }}"
           shell: "{{ _u_shell }}"
           changed: false
