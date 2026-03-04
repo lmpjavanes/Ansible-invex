@@ -1,11 +1,13 @@
-Host,CheckedAt,HostStatus,Operation,Username,Action,UserType,Group,Home,Shell,Changed,Status,Message
+Host,CheckedAt,HostStatus,Operation,Username,Action,UserType,Group,ExtraGroups,Home,Shell,Changed,Status,Message
 {% for h in audit_linux | default([]) %}
 {% set ops = h.operations | default([]) %}
 {% if ops | length == 0 %}
-{{ h.host | default('') }},{{ h.checked_at | default('') }},{{ h.status | default('') }},{{ h.operation | default('') }},,,,,,,,{{ '' }},{{ h.status | default('') }},{{ (h.message | default('')) | replace('\n',' ') | replace('\r',' ') | replace(',',';') }}
+{{ h.host | default('') }},{{ h.checked_at | default('') }},{{ h.status | default('') }},{{ h.operation | default('') }},,,,,,,,,,{{ h.status | default('') }},{{ (h.message | default('')) | replace('\n',' ') | replace('\r',' ') | replace(',',';') }}
 {% else %}
 {% for op in ops %}
-{{ h.host | default('') }},{{ h.checked_at | default('') }},{{ h.status | default('') }},{{ h.operation | default('') }},{{ op.username | default('') }},{{ op.action | default('') }},{{ op.user_type | default('') }},{{ op.group | default('') }},{{ op.home | default('') }},{{ op.shell | default('') }},{{ op.changed | default(false) }},{{ op.status | default('') }},{{ (op.message | default('')) | replace('\n',' ') | replace('\r',' ') | replace(',',';') }}
+{% set eg = op.extra_groups | default([]) %}
+{% set eg_str = (eg if (eg is string) else (eg | join('|'))) %}
+{{ h.host | default('') }},{{ h.checked_at | default('') }},{{ h.status | default('') }},{{ h.operation | default('') }},{{ op.username | default('') }},{{ op.action | default('') }},{{ op.user_type | default('') }},{{ op.group | default('') }},{{ (eg_str | default('')) | replace(',',';') }},{{ op.home | default('') }},{{ op.shell | default('') }},{{ op.changed | default(false) }},{{ op.status | default('') }},{{ (op.message | default('')) | replace('\n',' ') | replace('\r',' ') | replace(',',';') }}
 {% endfor %}
 {% endif %}
 {% endfor %}

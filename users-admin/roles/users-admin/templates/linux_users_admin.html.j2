@@ -26,6 +26,7 @@
       <th>Acción</th>
       <th>Tipo</th>
       <th>Grupo</th>
+      <th>Grupos extra</th>
       <th>Home</th>
       <th>Shell</th>
       <th>Changed</th>
@@ -41,7 +42,7 @@
           <td>{{ h.checked_at | default('') }}</td>
           <td class="{{ 'bad' if (h.status | default('')) != 'ok' else 'ok' }}">{{ h.status | default('') }}</td>
           <td>{{ h.operation | default('') }}</td>
-          <td></td><td></td><td></td><td></td><td></td><td></td>
+          <td></td><td></td><td></td><td></td><td></td><td></td><td></td>
           <td></td>
           <td class="bad">{{ h.status | default('') }}</td>
           <td class="bad">{{ h.message | default('') }}</td>
@@ -57,6 +58,13 @@
           <td>{{ op.action | default('') }}</td>
           <td>{{ op.user_type | default('') }}</td>
           <td>{{ op.group | default('') }}</td>
+
+          {# Extra Groups: vacío si no existe o lista vacía #}
+          <td>
+            {% set eg = op.extra_groups | default([]) %}
+            {{ (eg | join(' | ')) if (eg | length > 0) else '' }}
+          </td>
+
           <td>{{ op.home | default('') }}</td>
           <td>{{ op.shell | default('') }}</td>
           <td>{{ op.changed | default(false) }}</td>
