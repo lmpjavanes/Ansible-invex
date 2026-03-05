@@ -87,15 +87,29 @@
     - (_vault_install is not defined) or (_vault_install.failed | default(false))
 
 # --------------------------------------------------------------------
-# Generacion y cifrado de passwords
+# DEBUG: Verificar version de ansible-vault
+# --------------------------------------------------------------------
+- name: DEBUG - Verificar version de ansible-vault
+  ansible.builtin.command: "ansible-vault --version"
+  delegate_to: invd-ts-ansible
+  run_once: true
+  register: _vault_version
+  changed_when: false
+
+- name: DEBUG - Mostrar version de ansible-vault
+  ansible.builtin.debug:
+    msg: "ansible-vault version: {{ _vault_version.stdout }}"
+  run_once: true
+
+# --------------------------------------------------------------------
+# Generacion y cifrado de passwords - VERSION DEBUG
 # --------------------------------------------------------------------
 - name: Verificar/Crear archivo de passwords limpio
   ansible.builtin.file:
     path: "{{ report_dir }}/linux_users_passwords.txt.vault"
-    state: absent  # Eliminar vault anterior si existe
+    state: absent
   delegate_to: invd-ts-ansible
   run_once: true
-  no_log: true
 
 - name: Generar TXT de passwords (temporal, en claro)
   ansible.builtin.template:
@@ -104,7 +118,23 @@
     mode: "0600"
   delegate_to: invd-ts-ansible
   run_once: true
-  no_log: true
+
+- name: DEBUG - Verificar contenido del archivo de passwords
+  ansible.builtin.shell: |
+    echo "=== Contenido del archivo de passwords ==="
+    cat "{{ report_dir }}/linux_users_passwords.txt"
+    echo "=== Fin del archivo ==="
+    echo "=== Permisos del archivo ==="
+    ls -la "{{ report_dir }}/linux_users_passwords.txt"
+  delegate_to: invd-ts-ansible
+  run_once: true
+  register: _file_check
+  changed_when: false
+
+- name: DEBUG - Mostrar informacion del archivo
+  ansible.builtin.debug:
+    msg: "{{ _file_check.stdout }}"
+  run_once: true
 
 - name: Crear vault password file temporal (solo runtime)
   ansible.builtin.copy:
@@ -115,27 +145,65 @@
   run_once: true
   no_log: true
 
-- name: Cifrar TXT a .vault (output junto a reportes)
+- name: DEBUG - Verificar que el password file se creo correctamente
   ansible.builtin.shell: |
-    set -e
+    echo "=== Password file existe y tiene permisos ==="
+    ls -la "{{ report_dir }}/.users_admin_vault_pass.tmp"
+    echo "=== Longitud del password (caracteres) ==="
+    wc -c "{{ report_dir }}/.users_admin_vault_pass.tmp"
+  delegate_to: invd-ts-ansible
+  run_once: true
+  register: _passfile_check
+  changed_when: false
+  no_log: false
+
+- name: DEBUG - Mostrar informacion del password file
+  ansible.builtin.debug:
+    msg: "{{ _passfile_check.stdout }}"
+  run_once: true
+
+- name: Cifrar TXT a .vault (output junto a reportes) - VERSION DEBUG
+  ansible.builtin.shell: |
+    set -x  # Mostrar comandos ejecutados
+    echo "=== Intentando cifrar el archivo ==="
+    
     # Verificar si el archivo ya está cifrado
     if head -1 "{{ report_dir }}/linux_users_passwords.txt" 2>/dev/null | grep -q "^$ANSIBLE_VAULT;"; then
       echo "ERROR: El archivo ya esta cifrado" >&2
       exit 1
     fi
-    # Cifrar el archivo
+    
+    # Mostrar el comando que vamos a ejecutar
+    echo "Comando: ansible-vault encrypt {{ report_dir }}/linux_users_passwords.txt --output {{ report_dir }}/linux_users_passwords.txt.vault --vault-password-file {{ report_dir }}/.users_admin_vault_pass.tmp"
+    
+    # Ejecutar el comando
     ansible-vault encrypt \
       "{{ report_dir }}/linux_users_passwords.txt" \
       --output "{{ report_dir }}/linux_users_passwords.txt.vault" \
-      --vault-password-file "{{ report_dir }}/.users_admin_vault_pass.tmp"
+      --vault-password-file "{{ report_dir }}/.users_admin_vault_pass.tmp" 2>&1
+    
+    # Verificar el resultado
+    if [ $? -eq 0 ]; then
+      echo "=== Cifrado exitoso ==="
+      ls -la "{{ report_dir }}/linux_users_passwords.txt.vault"
+    else
+      echo "=== ERROR en el cifrado ==="
+      exit 1
+    fi
   delegate_to: invd-ts-ansible
   run_once: true
-  no_log: true
   register: _vault_encrypt
-  failed_when:
-    - _vault_encrypt.rc != 0
-    - '"already encrypted" not in _vault_encrypt.stderr'
-  changed_when: _vault_encrypt.rc == 0
+  failed_when: false
+  no_log: false  # IMPORTANTE: Desactivamos no_log para ver el error
+
+- name: DEBUG - Mostrar resultado del cifrado
+  ansible.builtin.debug:
+    msg:
+      - "RC: {{ _vault_encrypt.rc }}"
+      - "STDOUT: {{ _vault_encrypt.stdout }}"
+      - "STDERR: {{ _vault_encrypt.stderr }}"
+  run_once: true
+  when: _vault_encrypt.rc != 0
 
 - name: Verificar que el archivo vault se creo correctamente
   ansible.builtin.stat:
@@ -143,38 +211,69 @@
   delegate_to: invd-ts-ansible
   run_once: true
   register: _vault_file
-  no_log: true
+
+- name: DEBUG - Mostrar resultado de la verificacion
+  ansible.builtin.debug:
+    msg:
+      - "Archivo vault existe: {{ _vault_file.stat.exists }}"
+      - "Tamaño: {{ _vault_file.stat.size }} bytes"
+      - "Permisos: {{ _vault_file.stat.mode }}"
+  run_once: true
 
 - name: Fallback - Intentar cifrado con metodo alternativo si el archivo vault no existe
-  ansible.builtin.command: >
-    ansible-vault encrypt
-    {{ report_dir }}/linux_users_passwords.txt
-    --vault-password-file {{ report_dir }}/.users_admin_vault_pass.tmp
+  ansible.builtin.shell: |
+    set -x
+    echo "=== Intentando metodo alternativo (sin --output) ==="
+    
+    # Hacer backup del archivo original
+    cp "{{ report_dir }}/linux_users_passwords.txt" "{{ report_dir }}/linux_users_passwords.txt.bak"
+    
+    # Ejecutar cifrado sin --output
+    ansible-vault encrypt \
+      "{{ report_dir }}/linux_users_passwords.txt" \
+      --vault-password-file "{{ report_dir }}/.users_admin_vault_pass.tmp" 2>&1
+    
+    if [ $? -eq 0 ]; then
+      echo "=== Cifrado alternativo exitoso ==="
+      # Mover el archivo cifrado
+      mv "{{ report_dir }}/linux_users_passwords.txt" "{{ report_dir }}/linux_users_passwords.txt.vault"
+      # Restaurar el backup como archivo en claro temporal
+      mv "{{ report_dir }}/linux_users_passwords.txt.bak" "{{ report_dir }}/linux_users_passwords.txt"
+    else
+      echo "=== ERROR en cifrado alternativo ==="
+      # Restaurar backup en caso de error
+      mv "{{ report_dir }}/linux_users_passwords.txt.bak" "{{ report_dir }}/linux_users_passwords.txt" 2>/dev/null || true
+      exit 1
+    fi
   delegate_to: invd-ts-ansible
   run_once: true
-  no_log: true
   when: not _vault_file.stat.exists
   register: _vault_encrypt_fallback
+  failed_when: false
+  no_log: false
+
+- name: DEBUG - Mostrar resultado del fallback
+  ansible.builtin.debug:
+    msg:
+      - "Fallback RC: {{ _vault_encrypt_fallback.rc }}"
+      - "Fallback STDOUT: {{ _vault_encrypt_fallback.stdout }}"
+      - "Fallback STDERR: {{ _vault_encrypt_fallback.stderr }}"
+  run_once: true
+  when: 
+    - _vault_encrypt_fallback is defined
+    - _vault_encrypt_fallback.rc != 0
 
 - name: Verificar resultado final
-  ansible.builtin.assert:
-    that:
-      - _vault_file.stat.exists or (_vault_encrypt_fallback is not skipped and _vault_encrypt_fallback.rc == 0)
-    fail_msg: "No se pudo crear el archivo vault de passwords"
-  run_once: true
-  no_log: true
-
-- name: Mover archivo si se uso fallback (sin --output)
-  ansible.builtin.command: >
-    mv {{ report_dir }}/linux_users_passwords.txt
-    {{ report_dir }}/linux_users_passwords.txt.vault
+  ansible.builtin.stat:
+    path: "{{ report_dir }}/linux_users_passwords.txt.vault"
   delegate_to: invd-ts-ansible
   run_once: true
-  no_log: true
-  when:
-    - _vault_encrypt_fallback is defined
-    - _vault_encrypt_fallback.rc == 0
-    - not _vault_file.stat.exists
+  register: _vault_final
+
+- name: Fallar si no se pudo crear el archivo vault
+  ansible.builtin.fail:
+    msg: "No se pudo crear el archivo vault de passwords. Revise los mensajes de debug anteriores."
+  when: not _vault_final.stat.exists
 
 - name: Borrar TXT en claro (si existe)
   ansible.builtin.file:
@@ -182,7 +281,6 @@
     state: absent
   delegate_to: invd-ts-ansible
   run_once: true
-  no_log: true
 
 - name: Borrar vault password file temporal
   ansible.builtin.file:
@@ -192,6 +290,14 @@
   run_once: true
   no_log: true
 
+- name: Borrar archivos temporales de debug
+  ansible.builtin.file:
+    path: "{{ report_dir }}/linux_users_passwords.txt.bak"
+    state: absent
+  delegate_to: invd-ts-ansible
+  run_once: true
+  ignore_errors: true
+
 - name: Mostrar rutas de salida
   ansible.builtin.debug:
     msg:
@@ -199,4 +305,5 @@
       - "Linux CSV : {{ report_dir }}/linux_users_admin.csv"
       - "Linux HTML: {{ report_dir }}/linux_users_admin.html"
       - "Passwords (Vault): {{ report_dir }}/linux_users_passwords.txt.vault"
+      - "Tamaño del archivo vault: {{ _vault_final.stat.size if _vault_final.stat.exists else 'N/A' }} bytes"
   run_once: true
