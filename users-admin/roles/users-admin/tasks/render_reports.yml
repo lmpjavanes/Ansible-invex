@@ -57,12 +57,78 @@
   run_once: true
   no_log: true
 
-- name: Verificar que ansible-vault exista en invd-ts-ansible
+# --------------------------------------------------------------------
+# Manejo defensivo de ansible-vault (similar al enfoque de passlib)
+# --------------------------------------------------------------------
+- name: Verificar si ansible-vault existe en invd-ts-ansible
   ansible.builtin.command: "command -v ansible-vault"
   delegate_to: invd-ts-ansible
   run_once: true
+  register: _vault_check
   changed_when: false
+  failed_when: false
+  ignore_errors: true
 
+- name: Instalar ansible-vault con pip (invd-ts-ansible) si falta
+  ansible.builtin.pip:
+    name: ansible
+    state: present
+    extra_args: "--no-cache-dir"
+  delegate_to: invd-ts-ansible
+  run_once: true
+  when: _vault_check.rc != 0
+  register: _vault_install
+  failed_when: false
+
+- name: Verificar nuevamente si ansible-vault ya está disponible
+  ansible.builtin.command: "command -v ansible-vault"
+  delegate_to: invd-ts-ansible
+  run_once: true
+  register: _vault_check_retry
+  changed_when: false
+  failed_when: false
+  when: _vault_install is changed
+
+- name: Aviso si se instalo ansible-vault correctamente
+  ansible.builtin.debug:
+    msg: "ansible-vault se instalo correctamente durante la ejecucion."
+  delegate_to: invd-ts-ansible
+  run_once: true
+  when:
+    - _vault_install is defined
+    - _vault_install.changed | default(false)
+    - _vault_check_retry.rc == 0
+
+- name: Fallar si ansible-vault sigue sin estar disponible
+  ansible.builtin.fail:
+    msg: >-
+      El comando 'ansible-vault' no se encuentra en invd-ts-ansible.
+      Es necesario para cifrar el archivo de passwords.
+      Se intento instalar con pip, pero no fue posible.
+      Verifica la instalacion de Ansible en el nodo de control.
+  when:
+    - _vault_check.rc != 0
+    - (_vault_install is not defined) or (_vault_install.failed | default(false))
+    - (_vault_check_retry.rc is defined) and (_vault_check_retry.rc != 0)
+
+- name: Verificar que ansible-vault funcione correctamente
+  ansible.builtin.command: "ansible-vault --version"
+  delegate_to: invd-ts-ansible
+  run_once: true
+  register: _vault_version
+  changed_when: false
+  failed_when: false
+
+- name: Mostrar version de ansible-vault (debug)
+  ansible.builtin.debug:
+    msg: "ansible-vault version: {{ _vault_version.stdout_lines[0] | default('unknown') }}"
+  delegate_to: invd-ts-ansible
+  run_once: true
+  when: _vault_version.rc == 0
+
+# --------------------------------------------------------------------
+# Generacion y cifrado de passwords
+# --------------------------------------------------------------------
 - name: Generar TXT de passwords (temporal, en claro)
   ansible.builtin.template:
     src: linux_users_passwords.txt.j2
@@ -90,6 +156,10 @@
   delegate_to: invd-ts-ansible
   run_once: true
   no_log: true
+  register: _vault_encrypt
+  failed_when:
+    - _vault_encrypt.rc != 0
+    - '"already encrypted" not in _vault_encrypt.stderr'
 
 - name: Borrar TXT en claro
   ansible.builtin.file:
