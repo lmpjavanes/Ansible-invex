@@ -95,7 +95,7 @@
   no_log: true
 
 ############################################################
-# Expiración password (SOLO CREATE)
+# Expiracion password (SOLO CREATE)
 ############################################################
 
 - name: Configurar expiracion password
@@ -157,7 +157,7 @@
   become: true
 
 ############################################################
-# Eliminación usuario (SOLO DELETE)
+# Eliminacion usuario
 ############################################################
 
 - name: Eliminar usuario
@@ -169,7 +169,7 @@
   register: _user_res
 
 ############################################################
-# Construir resultado para reportes (CORREGIDO)
+# Construir resultado para reportes
 ############################################################
 
 - name: Construir resultado para CREATE

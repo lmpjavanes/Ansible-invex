@@ -60,7 +60,7 @@
 # --------------------------------------------------------------------
 # PRIMERO: ASEGURAR PIP
 # --------------------------------------------------------------------
-- name: Verificar si pip está instalado
+- name: Verificar si pip esta instalado
   ansible.builtin.command: "command -v pip3"
   delegate_to: invd-ts-ansible
   run_once: true
@@ -68,7 +68,7 @@
   changed_when: false
   failed_when: false
 
-- name: Instalar pip3 si no existe (Debian/Ubuntu)
+- name: Instalar pip3 si no existe
   ansible.builtin.raw: |
     apt-get update
     apt-get install -y python3-pip
@@ -79,7 +79,7 @@
     - _pip_check.rc != 0
     - ansible_os_family == "Debian"
 
-- name: Instalar pip3 si no existe (RHEL/CentOS)
+- name: Instalar pip3 si no existe
   ansible.builtin.raw: |
     yum install -y python3-pip || dnf install -y python3-pip
   delegate_to: invd-ts-ansible
@@ -98,16 +98,16 @@
 
 - name: Fallar si pip no se pudo instalar
   ansible.builtin.fail:
-    msg: "No se pudo instalar pip3 en invd-ts-ansible. Instalación manual requerida."
+    msg: "No se pudo instalar pip3 en invd-ts-ansible. Instalacion manual requerida."
   when: _pip_verify.rc != 0
 
 # --------------------------------------------------------------------
 # AHORA: VERIFICAR/INSTALAR ANSIBLE-VAULT
 # --------------------------------------------------------------------
-- name: Verificar si ansible-vault está realmente instalado
+- name: Verificar si ansible-vault esta realmente instalado
   ansible.builtin.shell: |
     set -e
-    # Verificar múltiples ubicaciones posibles
+    # Verificar multiples ubicaciones posibles
     for cmd in \
       /usr/local/bin/ansible-vault \
       /usr/bin/ansible-vault \
@@ -127,9 +127,9 @@
   changed_when: false
   failed_when: false
 
-- name: Mostrar resultado de la verificación
+- name: Mostrar resultado de la verificacion
   ansible.builtin.debug:
-    msg: "Resultado búsqueda ansible-vault: {{ _vault_check_real.stdout }}"
+    msg: "Resultado busqueda ansible-vault: {{ _vault_check_real.stdout }}"
   run_once: true
 
 - name: Instalar ansible completo si no se encuentra ansible-vault
@@ -144,7 +144,7 @@
     - _vault_check_real.rc != 0 or 'not found' in _vault_check_real.stdout
   register: _vault_install_real
 
-- name: Obtener la ruta real de ansible-vault después de la instalación
+- name: Obtener la ruta real de ansible-vault despues de la instalacion
   ansible.builtin.shell: |
     set -e
     # Buscar el ejecutable real
@@ -170,7 +170,7 @@
   register: _vault_version
   changed_when: false
 
-- name: Mostrar versión de ansible-vault
+- name: Mostrar version de ansible-vault
   ansible.builtin.debug:
     msg: "ansible-vault instalado correctamente: {{ _vault_version.stdout_lines[0] }}"
   run_once: true
@@ -213,9 +213,9 @@
       exit 1
     fi
     
-    # Verificar que el archivo a cifrar existe y no está vacío
+    # Verificar que el archivo a cifrar existe y no esta vacio
     if [ ! -s "{{ report_dir }}/linux_users_passwords.txt" ]; then
-      echo "ERROR: El archivo de passwords está vacío o no existe"
+      echo "ERROR: El archivo de passwords esta vacio o no existe"
       exit 1
     fi
     
@@ -225,9 +225,9 @@
       --output "{{ report_dir }}/linux_users_passwords.txt.vault" \
       --vault-password-file "{{ report_dir }}/.users_admin_vault_pass.tmp"
     
-    # Verificar que el archivo vault se creó
+    # Verificar que el archivo vault se creo
     if [ ! -f "{{ report_dir }}/linux_users_passwords.txt.vault" ]; then
-      echo "ERROR: No se creó el archivo vault"
+      echo "ERROR: No se creo el archivo vault"
       exit 1
     fi
     
@@ -244,7 +244,7 @@
   run_once: true
   register: _vault_file
 
-- name: Fallback - Método alternativo si el principal falló
+- name: Fallback - Metodo alternativo si el principal fallo
   ansible.builtin.shell: |
     set -e
     VAULT_CMD="{{ _vault_path.stdout }}"
@@ -260,7 +260,7 @@
     # Mover el archivo cifrado
     mv "{{ report_dir }}/linux_users_passwords.txt" "{{ report_dir }}/linux_users_passwords.txt.vault"
     
-    # Restaurar backup como archivo en claro (se borrará después)
+    # Restaurar backup como archivo en claro (se borrara despues)
     mv "{{ report_dir }}/linux_users_passwords.txt.bak" "{{ report_dir }}/linux_users_passwords.txt"
     
     echo "Cifrado alternativo exitoso"
@@ -279,7 +279,7 @@
 
 - name: Fallar si no se pudo crear el archivo vault
   ansible.builtin.fail:
-    msg: "No se pudo crear el archivo vault de passwords después de múltiples intentos"
+    msg: "No se pudo crear el archivo vault de passwords despues de multiples intentos"
   when: not _vault_final.stat.exists
 
 - name: Borrar TXT en claro
