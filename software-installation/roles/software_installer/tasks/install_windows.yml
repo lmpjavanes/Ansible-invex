@@ -29,12 +29,13 @@
 # ------------------------------------------------------------
 - name: "Windows | Resolver variables de share"
   ansible.builtin.set_fact:
+    # Valores directos de la credencial personalizada
     _share_root: >-
       {{
         windows_share_root
         | default(win_config.windows_share_root | default(''))
       }}
-    _software_source: >-
+    _relative_source_path: >-
       {{
         windows_software_source
         | default(win_config.windows_software_source | default(''))
@@ -50,11 +51,25 @@
         | default(win_config.windows_share_password | default(''))
       }}
 
+# Construir la ruta completa combinando share_root y la ruta relativa
+- name: "Windows | Construir ruta completa de origen"
+  ansible.builtin.set_fact:
+    _full_source_path: "{{ _share_root }}\\{{ _relative_source_path }}"
+
+- name: "Windows | DEBUG - Mostrar valores de variables (temporal)"
+  ansible.builtin.debug:
+    msg:
+      - "share_root: {{ _share_root }}"
+      - "relative_source_path: {{ _relative_source_path }}"
+      - "full_source_path: {{ _full_source_path }}"
+      - "share_user: {{ _share_user }}"
+  no_log: false  # Temporalmente mostrar para debug - quitar en producción
+
 - name: "Windows | Validar variables requeridas para SMB"
   ansible.builtin.assert:
     that:
       - _share_root | length > 0
-      - _software_source | length > 0
+      - _relative_source_path | length > 0
       - _share_user | length > 0
       - _share_password | length > 0
     fail_msg: >-
@@ -68,7 +83,7 @@
   block:
 
     # ============================================
-    # PASO 1: Autenticar share
+    # PASO 1: Autenticar share (SOLO contra share_root)
     # ============================================
     - name: "Windows | Autenticar a share SMB (net use con credenciales)"
       ansible.windows.win_shell: |
@@ -76,7 +91,8 @@
         $user  = "{{ _share_user }}"
         $pass  = "{{ _share_password }}"
 
-        cmd /c "net use $share /delete /y" | Out-Null
+        # Silenciar output de net use
+        cmd /c "net use $share /delete /y" 2>$null | Out-Null
         cmd /c "net use $share /user:$user $pass /persistent:no"
       register: net_use
       changed_when: false
@@ -84,18 +100,26 @@
       no_log: true
 
     # ============================================
-    # PASO 1.1: Verifica la ruta de origen
+    # PASO 1.1: Verifica la ruta de origen completa
     # ============================================
-    - name: "Windows | Verificar que la ruta de origen existe"
+    - name: "Windows | Verificar que la ruta de origen completa existe"
       ansible.windows.win_shell: |
-        $ruta = "{{ _software_source }}"
+        $ruta = "{{ _full_source_path }}"
         if (Test-Path $ruta) {
-            Write-Output "Ruta de origen accesible"
+            Write-Output "Ruta de origen accesible: $ruta"
             exit 0
         } else {
             Write-Output "Ruta de origen NO accesible: $ruta"
+            Write-Output "Verificando si el share raiz es accesible: {{ _share_root }}"
+            if (Test-Path "{{ _share_root }}") {
+                Write-Output "El share raiz SI es accesible"
+                # Listar contenido del share raiz para ayudar al debug
+                Write-Output "Contenido del share raiz:"
+                Get-ChildItem "{{ _share_root }}" | Select-Object Name | Format-Table -AutoSize
+            } else {
+                Write-Output "El share raiz NO es accesible"
+            }
             exit 1
-        }
       register: ruta_check
       failed_when: ruta_check.rc != 0
 
@@ -108,11 +132,11 @@
         state: directory
 
     # ============================================
-    # PASO 3: Copiar archivos
+    # PASO 3: Copiar archivos (usando la ruta completa)
     # ============================================
     - name: "Windows | Copiar archivos necesarios desde el share"
       ansible.windows.win_copy:
-        src: "{{ _software_source }}\\{{ item }}"
+        src: "{{ _full_source_path }}\\{{ item }}"
         dest: "{{ win_config.windows_dest_path }}"
         remote_src: yes
       loop: "{{ win_config.windows_files_to_copy }}"
@@ -145,10 +169,11 @@
           - "Script a ejecutar: {{ script_a_ejecutar }}"
           - "Ruta de trabajo: {{ win_config.windows_dest_path }}"
           - "Share root: {{ _share_root }}"
-          - "Software source: {{ _software_source }}"
+          - "Ruta relativa source: {{ _relative_source_path }}"
+          - "Ruta completa source: {{ _full_source_path }}"
 
     # ============================================
-    # PASO 4.5: Verificar si NCPA esta intalado
+    # PASO 4.5: Verificar si NCPA esta instalado
     # ============================================
     - name: "Windows | Verificar si NCPA ya esta instalado"
       ansible.windows.win_stat:
