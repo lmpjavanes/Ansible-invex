@@ -30,7 +30,7 @@
       }}
 
 ############################################################
-# Generar password seguro
+# Generar password seguro (SOLO CREATE)
 ############################################################
 
 - name: Generar password seguro
@@ -53,7 +53,7 @@
   when: users_admin_operation == 'create'
 
 ############################################################
-# Crear grupo si no existe
+# Crear grupo si no existe (SOLO CREATE)
 ############################################################
 
 - name: Crear grupo primario
@@ -74,7 +74,7 @@
     - (_u_extra_groups | length) > 0
 
 ############################################################
-# Crear usuario
+# Crear usuario (SOLO CREATE)
 ############################################################
 
 - name: Crear usuario
@@ -95,7 +95,7 @@
   no_log: true
 
 ############################################################
-# Expiración password
+# Expiración password (SOLO CREATE)
 ############################################################
 
 - name: Configurar expiracion password
@@ -111,7 +111,7 @@
   when: users_admin_operation == 'create'
 
 ############################################################
-# Ajuste SSH AllowUsers (solo OS)
+# Ajuste SSH AllowUsers (solo OS y CREATE)
 ############################################################
 
 - name: Leer AllowUsers actual
@@ -157,7 +157,7 @@
   become: true
 
 ############################################################
-# Eliminación usuario
+# Eliminación usuario (SOLO DELETE)
 ############################################################
 
 - name: Eliminar usuario
@@ -169,10 +169,10 @@
   register: _user_res
 
 ############################################################
-# Construir resultado para reportes
+# Construir resultado para reportes (CORREGIDO)
 ############################################################
 
-- name: Construir resultado
+- name: Construir resultado para CREATE
   ansible.builtin.set_fact:
     _op_result:
       username: "{{ _u_name }}"
@@ -187,8 +187,28 @@
       message: ""
       chage_info: "{{ _chage_info.stdout | default('') | regex_replace('[\\r\\n]+',' | ') }}"
       password_generated: true
-      password_plain: "{{ _u_password_plain }}"
+      password_plain: "{{ _u_password_plain | default('') }}"
   no_log: true
+  when: users_admin_operation == 'create'
+
+- name: Construir resultado para DELETE
+  ansible.builtin.set_fact:
+    _op_result:
+      username: "{{ _u_name }}"
+      action: "{{ users_admin_operation }}"
+      user_type: "{{ _u_type }}"
+      group: "{{ _u_group }}"
+      extra_groups: "{{ _u_extra_groups }}"
+      home: "{{ _u_home }}"
+      shell: "{{ _u_shell }}"
+      changed: "{{ _user_res.changed | default(false) }}"
+      status: "ok"
+      message: ""
+      chage_info: ""
+      password_generated: false
+      password_plain: ""
+  no_log: true
+  when: users_admin_operation == 'delete'
 
 - name: Agregar resultado a lista del host
   ansible.builtin.set_fact:
