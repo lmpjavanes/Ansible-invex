@@ -23,6 +23,46 @@
   ansible.builtin.meta: end_host
   when: host_unavailable
 
+# --------------------------------------------------------------------
+# NUEVO: Asegurar passlib en el Execution Environment (controller/localhost)
+# - password_hash('sha512') usa passlib si está disponible.
+# - Si no hay internet o pip, no fallamos: solo avisamos.
+# --------------------------------------------------------------------
+- name: Users-Admin | Verificar si passlib está instalado (EE / localhost)
+  ansible.builtin.command: "python3 -c 'import passlib; print(passlib.__version__)'"
+  delegate_to: localhost
+  run_once: true
+  register: _passlib_check
+  changed_when: false
+  failed_when: false
+
+- name: Users-Admin | Instalar passlib con pip (EE / localhost) si falta
+  ansible.builtin.pip:
+    name: passlib
+    state: present
+    extra_args: "--no-cache-dir"
+  delegate_to: localhost
+  run_once: true
+  when: _passlib_check.rc != 0
+  register: _passlib_install
+  failed_when: false
+
+- name: Users-Admin | Aviso si no se pudo instalar passlib (se continuará con crypt)
+  ansible.builtin.debug:
+    msg:
+      - "WARNING: No se pudo instalar passlib en el Execution Environment (localhost)."
+      - "El playbook continuará, pero puedes ver warnings por el módulo 'crypt'."
+      - "Recomendación enterprise: incluir passlib en el Execution Environment (ansible-builder) o permitir pip."
+      - "Detalle instalación (si aplica): {{ _passlib_install.msg | default(_passlib_install) }}"
+  delegate_to: localhost
+  run_once: true
+  when:
+    - _passlib_check.rc != 0
+    - (_passlib_install is not defined) or (_passlib_install.failed | default(false))
+
+# --------------------------------------------------------------------
+# Tu flujo actual (sin cambios)
+# --------------------------------------------------------------------
 - name: Cargar configuracion del rol (vars)
   ansible.builtin.include_vars:
     file: "{{ role_path }}/vars/users_admin.yml"
