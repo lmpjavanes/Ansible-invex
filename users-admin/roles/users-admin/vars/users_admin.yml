@@ -2,7 +2,7 @@
 # Operacion global:
 #   - create: crea/actualiza usuarios
 #   - delete: elimina usuarios (NO elimina home directory)
-operation: delete
+operation: create
 
 # Base default para HOME cuando no se define 'home'
 home_base: "/home"
@@ -14,17 +14,18 @@ home_base: "/home"
 # Campos por usuario:
 #   username  (requerido)
 #   group     (requerido en create; opcional en delete)
+#   extra_groups (Opcional grupos adicionales)
 #   type      (os|ftp)
 #   home      (opcional; default: {{home_base}}/{{username}})
 #   comment   (opcional)
 #   shell     (opcional; si se define, tiene prioridad)
 users:
-  - username: "example_user_ftp2"
+  - username: "example_user_os_3"
     group: "example_group"
-    extra_groups:
-      - "sftpusers"
-      - "auditoria"
-    type: "ftp"
+    # extra_groups:
+    #  - "sftpusers"
+    #  - "auditoria"
+    type: "os"
     # home: "/home/example_user"
     comment: "Usuario OS de ejemplo"
     # shell: "/usr/sbin/nologin"
