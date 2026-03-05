@@ -58,9 +58,53 @@
   no_log: true
 
 # --------------------------------------------------------------------
-# VERIFICACIÓN ROBUSTA de ansible-vault
+# PRIMERO: ASEGURAR PIP
 # --------------------------------------------------------------------
-- name: Verificar si ansible-vault está realmente instalado y funciona
+- name: Verificar si pip está instalado
+  ansible.builtin.command: "command -v pip3"
+  delegate_to: invd-ts-ansible
+  run_once: true
+  register: _pip_check
+  changed_when: false
+  failed_when: false
+
+- name: Instalar pip3 si no existe (Debian/Ubuntu)
+  ansible.builtin.raw: |
+    apt-get update
+    apt-get install -y python3-pip
+  delegate_to: invd-ts-ansible
+  run_once: true
+  become: true
+  when: 
+    - _pip_check.rc != 0
+    - ansible_os_family == "Debian"
+
+- name: Instalar pip3 si no existe (RHEL/CentOS)
+  ansible.builtin.raw: |
+    yum install -y python3-pip || dnf install -y python3-pip
+  delegate_to: invd-ts-ansible
+  run_once: true
+  become: true
+  when: 
+    - _pip_check.rc != 0
+    - ansible_os_family == "RedHat"
+
+- name: Verificar pip nuevamente
+  ansible.builtin.command: "pip3 --version"
+  delegate_to: invd-ts-ansible
+  run_once: true
+  register: _pip_verify
+  changed_when: false
+
+- name: Fallar si pip no se pudo instalar
+  ansible.builtin.fail:
+    msg: "No se pudo instalar pip3 en invd-ts-ansible. Instalación manual requerida."
+  when: _pip_verify.rc != 0
+
+# --------------------------------------------------------------------
+# AHORA: VERIFICAR/INSTALAR ANSIBLE-VAULT
+# --------------------------------------------------------------------
+- name: Verificar si ansible-vault está realmente instalado
   ansible.builtin.shell: |
     set -e
     # Verificar múltiples ubicaciones posibles
@@ -92,6 +136,7 @@
   ansible.builtin.pip:
     name: ansible
     state: present
+    executable: pip3
     extra_args: "--no-cache-dir --force-reinstall"
   delegate_to: invd-ts-ansible
   run_once: true
@@ -99,33 +144,7 @@
     - _vault_check_real.rc != 0 or 'not found' in _vault_check_real.stdout
   register: _vault_install_real
 
-- name: Verificar instalación después del pip
-  ansible.builtin.shell: |
-    which ansible-vault || echo "not found"
-    ansible-vault --version 2>/dev/null || echo "no funciona"
-  delegate_to: invd-ts-ansible
-  run_once: true
-  register: _vault_verify_install
-  changed_when: false
-  when: _vault_install_real is changed
-
-- name: Fallar si ansible-vault no está disponible
-  ansible.builtin.fail:
-    msg: |
-      No se pudo encontrar/instalar ansible-vault en invd-ts-ansible.
-      Resultado búsqueda: {{ _vault_check_real.stdout }}
-      Instalación: {{ _vault_install_real.msg | default('no intentada') }}
-      Verificación post-instalación: {{ _vault_verify_install.stdout | default('no verificada') }}
-      
-      Soluciones:
-      1. Ejecutar manualmente en invd-ts-ansible: pip install --force-reinstall ansible
-      2. Verificar que el PATH incluya /usr/local/bin
-      3. Instalar con el gestor de paquetes del sistema
-  when:
-    - (_vault_check_real.rc != 0 or 'not found' in _vault_check_real.stdout)
-    - (_vault_install_real is not defined) or (_vault_install_real.failed | default(false)) or (_vault_verify_install is defined and ('not found' in _vault_verify_install.stdout or 'no funciona' in _vault_verify_install.stdout))
-
-- name: Obtener la ruta real de ansible-vault
+- name: Obtener la ruta real de ansible-vault después de la instalación
   ansible.builtin.shell: |
     set -e
     # Buscar el ejecutable real
@@ -144,9 +163,16 @@
   register: _vault_path
   changed_when: false
 
-- name: Mostrar ruta de ansible-vault
+- name: Verificar que ansible-vault funciona
+  ansible.builtin.shell: "{{ _vault_path.stdout }} --version"
+  delegate_to: invd-ts-ansible
+  run_once: true
+  register: _vault_version
+  changed_when: false
+
+- name: Mostrar versión de ansible-vault
   ansible.builtin.debug:
-    msg: "ansible-vault encontrado en: {{ _vault_path.stdout }}"
+    msg: "ansible-vault instalado correctamente: {{ _vault_version.stdout_lines[0] }}"
   run_once: true
 
 # --------------------------------------------------------------------
