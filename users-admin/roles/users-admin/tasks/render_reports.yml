@@ -58,7 +58,7 @@
   no_log: true
 
 # --------------------------------------------------------------------
-# Manejo defensivo de ansible-vault (similar al enfoque de passlib)
+# Manejo defensivo de ansible-vault
 # --------------------------------------------------------------------
 - name: Verificar si ansible-vault existe en invd-ts-ansible
   ansible.builtin.command: "command -v ansible-vault"
@@ -67,7 +67,6 @@
   register: _vault_check
   changed_when: false
   failed_when: false
-  ignore_errors: true
 
 - name: Instalar ansible-vault con pip (invd-ts-ansible) si falta
   ansible.builtin.pip:
@@ -80,55 +79,24 @@
   register: _vault_install
   failed_when: false
 
-- name: Verificar nuevamente si ansible-vault ya está disponible
-  ansible.builtin.command: "command -v ansible-vault"
-  delegate_to: invd-ts-ansible
-  run_once: true
-  register: _vault_check_retry
-  changed_when: false
-  failed_when: false
-  when: _vault_install is changed
-
-- name: Aviso si se instalo ansible-vault correctamente
-  ansible.builtin.debug:
-    msg: "ansible-vault se instalo correctamente durante la ejecucion."
-  delegate_to: invd-ts-ansible
-  run_once: true
-  when:
-    - _vault_install is defined
-    - _vault_install.changed | default(false)
-    - _vault_check_retry.rc == 0
-
-- name: Fallar si ansible-vault sigue sin estar disponible
+- name: Fallar si ansible-vault no pudo instalarse
   ansible.builtin.fail:
-    msg: >-
-      El comando 'ansible-vault' no se encuentra en invd-ts-ansible.
-      Es necesario para cifrar el archivo de passwords.
-      Se intento instalar con pip, pero no fue posible.
-      Verifica la instalacion de Ansible en el nodo de control.
+    msg: "No se pudo instalar ansible-vault en invd-ts-ansible. Verifica la conectividad a internet o la instalacion manual."
   when:
     - _vault_check.rc != 0
     - (_vault_install is not defined) or (_vault_install.failed | default(false))
-    - (_vault_check_retry.rc is defined) and (_vault_check_retry.rc != 0)
-
-- name: Verificar que ansible-vault funcione correctamente
-  ansible.builtin.command: "ansible-vault --version"
-  delegate_to: invd-ts-ansible
-  run_once: true
-  register: _vault_version
-  changed_when: false
-  failed_when: false
-
-- name: Mostrar version de ansible-vault (debug)
-  ansible.builtin.debug:
-    msg: "ansible-vault version: {{ _vault_version.stdout_lines[0] | default('unknown') }}"
-  delegate_to: invd-ts-ansible
-  run_once: true
-  when: _vault_version.rc == 0
 
 # --------------------------------------------------------------------
 # Generacion y cifrado de passwords
 # --------------------------------------------------------------------
+- name: Verificar/Crear archivo de passwords limpio
+  ansible.builtin.file:
+    path: "{{ report_dir }}/linux_users_passwords.txt.vault"
+    state: absent  # Eliminar vault anterior si existe
+  delegate_to: invd-ts-ansible
+  run_once: true
+  no_log: true
+
 - name: Generar TXT de passwords (temporal, en claro)
   ansible.builtin.template:
     src: linux_users_passwords.txt.j2
@@ -148,11 +116,18 @@
   no_log: true
 
 - name: Cifrar TXT a .vault (output junto a reportes)
-  ansible.builtin.command: >
-    ansible-vault encrypt
-    {{ report_dir }}/linux_users_passwords.txt
-    --output {{ report_dir }}/linux_users_passwords.txt.vault
-    --vault-password-file {{ report_dir }}/.users_admin_vault_pass.tmp
+  ansible.builtin.shell: |
+    set -e
+    # Verificar si el archivo ya está cifrado
+    if head -1 "{{ report_dir }}/linux_users_passwords.txt" 2>/dev/null | grep -q "^$ANSIBLE_VAULT;"; then
+      echo "ERROR: El archivo ya esta cifrado" >&2
+      exit 1
+    fi
+    # Cifrar el archivo
+    ansible-vault encrypt \
+      "{{ report_dir }}/linux_users_passwords.txt" \
+      --output "{{ report_dir }}/linux_users_passwords.txt.vault" \
+      --vault-password-file "{{ report_dir }}/.users_admin_vault_pass.tmp"
   delegate_to: invd-ts-ansible
   run_once: true
   no_log: true
@@ -160,8 +135,48 @@
   failed_when:
     - _vault_encrypt.rc != 0
     - '"already encrypted" not in _vault_encrypt.stderr'
+  changed_when: _vault_encrypt.rc == 0
 
-- name: Borrar TXT en claro
+- name: Verificar que el archivo vault se creo correctamente
+  ansible.builtin.stat:
+    path: "{{ report_dir }}/linux_users_passwords.txt.vault"
+  delegate_to: invd-ts-ansible
+  run_once: true
+  register: _vault_file
+  no_log: true
+
+- name: Fallback - Intentar cifrado con metodo alternativo si el archivo vault no existe
+  ansible.builtin.command: >
+    ansible-vault encrypt
+    {{ report_dir }}/linux_users_passwords.txt
+    --vault-password-file {{ report_dir }}/.users_admin_vault_pass.tmp
+  delegate_to: invd-ts-ansible
+  run_once: true
+  no_log: true
+  when: not _vault_file.stat.exists
+  register: _vault_encrypt_fallback
+
+- name: Verificar resultado final
+  ansible.builtin.assert:
+    that:
+      - _vault_file.stat.exists or (_vault_encrypt_fallback is not skipped and _vault_encrypt_fallback.rc == 0)
+    fail_msg: "No se pudo crear el archivo vault de passwords"
+  run_once: true
+  no_log: true
+
+- name: Mover archivo si se uso fallback (sin --output)
+  ansible.builtin.command: >
+    mv {{ report_dir }}/linux_users_passwords.txt
+    {{ report_dir }}/linux_users_passwords.txt.vault
+  delegate_to: invd-ts-ansible
+  run_once: true
+  no_log: true
+  when:
+    - _vault_encrypt_fallback is defined
+    - _vault_encrypt_fallback.rc == 0
+    - not _vault_file.stat.exists
+
+- name: Borrar TXT en claro (si existe)
   ansible.builtin.file:
     path: "{{ report_dir }}/linux_users_passwords.txt"
     state: absent
