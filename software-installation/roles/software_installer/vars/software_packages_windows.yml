@@ -4,6 +4,6 @@ windows_dest_path: "C:\\sys\\"
 
 # Archivos a copiar desde la fuente
 windows_files_to_copy:
-  - "ncpa-latest.exe"
+  - "ncpa.exe"
   - "Instalar_Nagios_KIO.BAT"
   - "Instalar_Nagios_TRIARA.BAT"

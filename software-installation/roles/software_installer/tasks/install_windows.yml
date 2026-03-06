@@ -29,7 +29,6 @@
 # ------------------------------------------------------------
 - name: "Windows | Resolver variables de share"
   ansible.builtin.set_fact:
-    # Valores directos de la credencial personalizada
     _share_root: >-
       {{
         windows_share_root
@@ -63,7 +62,7 @@
       - "relative_source_path: {{ _relative_source_path }}"
       - "full_source_path: {{ _full_source_path }}"
       - "share_user: {{ _share_user }}"
-  no_log: false  # Temporalmente mostrar para debug - quitar en producción
+  no_log: false
 
 - name: "Windows | Validar variables requeridas para SMB"
   ansible.builtin.assert:
@@ -83,45 +82,80 @@
   block:
 
     # ============================================
-    # PASO 1: Autenticar share (SOLO contra share_root)
+    # PASO 1: Autenticar + Validar + Copiar 
     # ============================================
-    - name: "Windows | Autenticar a share SMB (net use con credenciales)"
+    - name: "Windows | SMB: Autenticar + validar ruta + copiar archivos (single-session)"
       ansible.windows.win_shell: |
-        $share = "{{ _share_root }}"
-        $user  = "{{ _share_user }}"
-        $pass  = "{{ _share_password }}"
+        $share     = "{{ _share_root }}"
+        $user      = "{{ _share_user }}"
+        $pass      = "{{ _share_password }}"
+        $srcDir    = "{{ _full_source_path }}"
+        $shareRoot = "{{ _share_root }}"
+        $destDir   = "{{ win_config.windows_dest_path }}"
 
-        # Silenciar output de net use
+        Write-Output "== SMB SESSION START =="
+        Write-Output "Share root: $shareRoot"
+        Write-Output "Full source: $srcDir"
+        Write-Output "Dest: $destDir"
+
+        # Limpieza por si existia sesion previa
         cmd /c "net use $share /delete /y" 2>$null | Out-Null
-        cmd /c "net use $share /user:$user $pass /persistent:no"
-      register: net_use
-      changed_when: false
-      failed_when: net_use.rc != 0
-      no_log: true
 
-    # ============================================
-    # PASO 1.1: Verifica la ruta de origen completa
-    # ============================================
-    - name: "Windows | Verificar que la ruta de origen completa existe"
-      ansible.windows.win_shell: |
-        $ruta = "{{ _full_source_path }}"
-        if (Test-Path $ruta) {
-            Write-Output "Ruta de origen accesible: $ruta"
-            exit 0
+        # Autenticacion
+        cmd /c "net use $share /user:$user $pass /persistent:no" | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+          Write-Output "ERROR: net use fallo (rc=$LASTEXITCODE) hacia $share"
+          exit 10
+        }
+
+        # Validar share root
+        if (!(Test-Path $shareRoot)) {
+          Write-Output "ERROR: El share raiz NO es accesible: $shareRoot"
+          cmd /c "net use $share /delete /y" | Out-Null
+          exit 11
         } else {
-            Write-Output "Ruta de origen NO accesible: $ruta"
-            Write-Output "Verificando si el share raiz es accesible: {{ _share_root }}"
-            if (Test-Path "{{ _share_root }}") {
-                Write-Output "El share raiz SI es accesible"
-                # Listar contenido del share raiz para ayudar al debug
-                Write-Output "Contenido del share raiz:"
-                Get-ChildItem "{{ _share_root }}" | Select-Object Name | Format-Table -AutoSize
-            } else {
-                Write-Output "El share raiz NO es accesible"
-            }
-            exit 1
-      register: ruta_check
-      failed_when: ruta_check.rc != 0
+          Write-Output "OK: El share raiz SI es accesible"
+        }
+
+        # Validar ruta completa
+        Write-Output "Verificando ruta completa: $srcDir"
+        if (!(Test-Path $srcDir)) {
+          Write-Output "ERROR: Ruta de origen NO accesible: $srcDir"
+          Write-Output "Contenido del share raiz (debug):"
+          Get-ChildItem $shareRoot -ErrorAction SilentlyContinue | Select-Object Name | Format-Table -AutoSize
+          cmd /c "net use $share /delete /y" | Out-Null
+          exit 12
+        } else {
+          Write-Output "OK: Ruta de origen accesible: $srcDir"
+        }
+
+        # Crear destino si no existe
+        if (!(Test-Path $destDir)) {
+          New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+        }
+
+        # Copia de archivos (loop templated por Jinja)
+        $copied = @()
+        {% for f in win_config.windows_files_to_copy %}
+        $filePath = "{{ _full_source_path }}\{{ f }}"
+        if (!(Test-Path $filePath)) {
+          Write-Output "ERROR: No existe archivo en origen: $filePath"
+          cmd /c "net use $share /delete /y" | Out-Null
+          exit 13
+        }
+
+        Copy-Item -Path $filePath -Destination $destDir -Force
+        $copied += "{{ f }}"
+        {% endfor %}
+
+        Write-Output ("OK: Archivos copiados: " + ($copied -join ", "))
+
+        # Cerrar sesion SMB
+        cmd /c "net use $share /delete /y" | Out-Null
+        Write-Output "== SMB SESSION END =="
+      register: smb_copy_session
+      failed_when: smb_copy_session.rc != 0
+      no_log: true
 
     # ============================================
     # PASO 2: Crea directorio destino
@@ -132,19 +166,11 @@
         state: directory
 
     # ============================================
-    # PASO 3: Copiar archivos (usando la ruta completa)
+    # PASO 3: Verificar que los archivos se copiaron (ajuste: corregir path)
     # ============================================
-    - name: "Windows | Copiar archivos necesarios desde el share"
-      ansible.windows.win_copy:
-        src: "{{ _full_source_path }}\\{{ item }}"
-        dest: "{{ win_config.windows_dest_path }}"
-        remote_src: yes
-      loop: "{{ win_config.windows_files_to_copy }}"
-      register: copy_files_result
-
     - name: "Windows | Verificar que los archivos se copiaron"
       ansible.windows.win_stat:
-        path: "{{ win_config.windows_dest_path }}{{ item }}"
+        path: "{{ win_config.windows_dest_path }}\\{{ item }}"
       loop: "{{ win_config.windows_files_to_copy }}"
       register: verify_copy
 
@@ -274,13 +300,13 @@
     # ============================================
     - name: "Windows | Eliminar archivos copiados del directorio temporal"
       ansible.windows.win_file:
-        path: "{{ win_config.windows_dest_path }}{{ item }}"
+        path: "{{ win_config.windows_dest_path }}\\{{ item }}"
         state: absent
       loop: "{{ win_config.windows_files_to_copy }}"
       register: cleanup_result
       failed_when: false
 
-    # Opcional: cerrar sesion SMB al final
+    # Opcional: cerrar sesion SMB al final (ya se cierra en el PASO 1, lo dejo por seguridad)
     - name: "Windows | Cerrar sesion SMB (net use delete)"
       ansible.windows.win_shell: |
         cmd /c "net use {{ _share_root }} /delete /y"
@@ -289,7 +315,7 @@
       no_log: true
 
     # ============================================
-    # PASO 7: Consolidar resultados
+    # PASO 7: Consolidar resultados (sin cambios)
     # ============================================
     - name: "Windows | Determinar mensaje para el reporte"
       ansible.builtin.set_fact:
@@ -343,14 +369,14 @@
           message: "{{ mensaje_base }} | Archivos temporales eliminados."
 
   rescue:
-    # Construir mensaje amigable: prioriza stdout del ruta_check
+    # Construir mensaje amigable: prioriza stdout del task único
     - name: "Windows | Capturar error para reporte (priorizar mensaje amigable)"
       ansible.builtin.set_fact:
         _win_error_msg: >-
           {{
             (
-              ruta_check.stdout
-              if (ruta_check is defined and (ruta_check.stdout | default('') | length > 0))
+              smb_copy_session.stdout
+              if (smb_copy_session is defined and (smb_copy_session.stdout | default('') | length > 0))
               else
               (
                 ansible_failed_result.stdout
