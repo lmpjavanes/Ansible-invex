@@ -23,34 +23,50 @@
 #    version_regex: "[nombre]-(\\d+.*)"
 
 linux_packages:
-    
-  # Paquete: SentinelAgent
-  - name: "SentinelAgent"
-    src_file: "SentinelAgent_Linux_x86_64_v25_1_3_6.rpm"
-    description: "SentinelOne Endpoint Protection Agent"
-    vendor: "SentinelOne"
-    dest_path: "/tmp/"
-    cleanup_dest: true
 
+  # Paquete: htop
+  - name: "htop"
+    description: "Visor interactivo de procesos para Linux"
+    vendor: "htop.dev"
+    src_file: "htop-3.3.0-1.el9.x86_64.rpm"
+    dest_path: "/tmp/"
+    package_type: "rpm"
+    # Dependencias del paquete (se instalaran automaticamente)
+    dependencies:
+      - "hwloc"
+      - "ncurses"
     commands:
       install: "rpm -ivh"
-      post_install_validation: "rpm -qa | grep -i '^SentinelAgent'"
-      activation: "/opt/sentinelone/bin/sentinelctl management token set {{ sentinelone_token }}"
-      start: "/opt/sentinelone/bin/sentinelctl control start"
-      status: "/opt/sentinelone/bin/sentinelctl control status"
+      post_install_validation: "rpm -qa | grep -i htop"
+    version_regex: "htop-(\\d+\\.\\d+\\.\\d+)"
 
-    # Para extraer version desde: SentinelAgent-23.2.1.12345.x86_64
-    version_regex: "^SentinelAgent-([0-9]+\\.[0-9]+\\.[0-9]+)"
+  # Paquete: SentinelAgent
+  # - name: "SentinelAgent"
+  #   src_file: "SentinelAgent_Linux_x86_64_v25_1_3_6.rpm"
+  #   description: "SentinelOne Endpoint Protection Agent"
+  #   vendor: "SentinelOne"
+  #   dest_path: "/tmp/"
+  #   cleanup_dest: true
 
-    # -------- Logica especial para activacion ----------
-    activation_check:
-      cmd: "/opt/sentinelone/bin/sentinelctl control status"
-      success_regex: "Agent state\\s+Enabled"
+  #   commands:
+  #     install: "rpm -ivh"
+  #     post_install_validation: "rpm -qa | grep -i '^SentinelAgent'"
+  #     activation: "/opt/sentinelone/bin/sentinelctl management token set {{ sentinelone_token }}"
+  #     start: "/opt/sentinelone/bin/sentinelctl control start"
+  #     status: "/opt/sentinelone/bin/sentinelctl control status"
 
-    # -------- Timeouts (evita que se quede 15 min colgado) ----------
-    activation_timeout_sec: 180
-    start_timeout_sec: 180
-    status_timeout_sec: 60
+  #   # Para extraer version desde: SentinelAgent-23.2.1.12345.x86_64
+  #   version_regex: "^SentinelAgent-([0-9]+\\.[0-9]+\\.[0-9]+)"
 
-    # Solo activar cuando se instala por primera vez
-    force_activation: false
+  #   # -------- Logica especial para activacion ----------
+  #   activation_check:
+  #     cmd: "/opt/sentinelone/bin/sentinelctl control status"
+  #     success_regex: "Agent state\\s+Enabled"
+
+  #   # -------- Timeouts (evita que se quede 15 min colgado) ----------
+  #   activation_timeout_sec: 180
+  #   start_timeout_sec: 180
+  #   status_timeout_sec: 60
+
+  #   # Solo activar cuando se instala por primera vez
+  #   force_activation: false
