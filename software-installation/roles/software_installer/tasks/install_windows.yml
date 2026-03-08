@@ -315,7 +315,7 @@
       no_log: true
 
     # ============================================
-    # PASO 7: Consolidar resultados (sin cambios)
+    # PASO 7: Consolidar resultados
     # ============================================
     - name: "Windows | Determinar mensaje para el reporte"
       ansible.builtin.set_fact:
@@ -326,12 +326,42 @@
           Paquete instalado correctamente
           {% endif %}
 
+    - name: "Windows | Obtener descripcion y proveedor desde configuracion"
+      ansible.builtin.set_fact:
+        _pkg_description: >-
+          {{
+            win_config.windows_packages 
+            | default([]) 
+            | selectattr('name', 'equalto', 'NCPA Agent') 
+            | map(attribute='description') 
+            | first 
+            | default('')
+          }}
+        _pkg_vendor: >-
+          {{
+            win_config.windows_packages 
+            | default([]) 
+            | selectattr('name', 'equalto', 'NCPA Agent') 
+            | map(attribute='vendor') 
+            | first 
+            | default('')
+          }}
+      when: win_config.windows_packages is defined
+
+    - name: "Windows | Establecer valores por defecto para descripcion y proveedor"
+      ansible.builtin.set_fact:
+        _pkg_description: "{{ _pkg_description | default('Agente NCPA para Nagios') }}"
+        _pkg_vendor: "{{ _pkg_vendor | default('Nagios Enterprises') }}"
+
     - name: "Windows | Construir resultado de instalacion"
       ansible.builtin.set_fact:
         host_installation_results: "{{ host_installation_results + [ pkg_result ] }}"
       vars:
         pkg_result:
           package_name: "NCPA Agent"
+          # Usamos los valores obtenidos
+          description: "{{ _pkg_description }}"
+          vendor: "{{ _pkg_vendor }}"
           ambiente: "{{ ambiente_detectado }}"
           script_ejecutado: "{{ script_a_ejecutar | basename if not ya_instalado else 'N/A' }}"
           status: "{{ 'success' if ((script_execution.rc | default(1)) == 0 or ya_instalado) and (ncpa_installed.stat.exists | default(false)) else 'failed' }}"
@@ -369,8 +399,7 @@
           message: "{{ mensaje_base }} | Archivos temporales eliminados."
 
   rescue:
-    # Construir mensaje amigable: prioriza stdout del task único
-    - name: "Windows | Capturar error para reporte (priorizar mensaje amigable)"
+    - name: "Windows | Capturar error para reporte"
       ansible.builtin.set_fact:
         _win_error_msg: >-
           {{
@@ -387,6 +416,33 @@
             | trim
           }}
 
+    - name: "Windows | Obtener descripcion y proveedor para caso de error"
+      ansible.builtin.set_fact:
+        _pkg_description_err: >-
+          {{
+            win_config.windows_packages 
+            | default([]) 
+            | selectattr('name', 'equalto', 'NCPA Agent') 
+            | map(attribute='description') 
+            | first 
+            | default('Agente NCPA para Nagios')
+          }}
+        _pkg_vendor_err: >-
+          {{
+            win_config.windows_packages 
+            | default([]) 
+            | selectattr('name', 'equalto', 'NCPA Agent') 
+            | map(attribute='vendor') 
+            | first 
+            | default('Nagios Enterprises')
+          }}
+      when: win_config.windows_packages is defined
+
+    - name: "Windows | Establecer valores por defecto para error"
+      ansible.builtin.set_fact:
+        _pkg_description_err: "{{ _pkg_description_err | default('Agente NCPA para Nagios') }}"
+        _pkg_vendor_err: "{{ _pkg_vendor_err | default('Nagios Enterprises') }}"
+
     - name: "Windows | Construir resultado FAILED para el host (para reportes)"
       ansible.builtin.set_fact:
         software_installation_result:
@@ -396,6 +452,8 @@
           ambiente: "{{ ambiente_detectado | default('DESCONOCIDO') }}"
           packages:
             - package_name: "NCPA Agent"
+              description: "{{ _pkg_description_err | default('Agente NCPA para Nagios') }}"
+              vendor: "{{ _pkg_vendor_err | default('Nagios Enterprises') }}"
               ambiente: "{{ ambiente_detectado | default('DESCONOCIDO') }}"
               script_ejecutado: "N/A"
               status: "failed"
